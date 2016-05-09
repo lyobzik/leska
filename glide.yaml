@@ -1,0 +1,16 @@
+package: .
+import:
+- package: github.com/codahale/hdrhistogram
+- package: github.com/mailgun/log
+- package: github.com/mailgun/multibuf
+- package: github.com/mailgun/timetools
+- package: github.com/mailgun/ttlmap
+- package: github.com/vulcand/oxy
+  subpackages:
+  - forward
+  - memmetrics
+  - testutils
+  - utils
+- package: github.com/vulcand/predicate
+- package: github.com/jessevdk/go-flags
+- package: github.com/pkg/errors
