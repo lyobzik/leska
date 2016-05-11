@@ -8,6 +8,10 @@ import (
 	"net/http"
 )
 
+const (
+	HttpStatusNetworkError = 530
+)
+
 type Response struct {
 	header http.Header
 	buffer multibuf.WriterOnce
