@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"github.com/vulcand/oxy/utils"
 	"reflect"
-	"net"
 )
 
 type Config struct {
@@ -57,7 +56,10 @@ func main() {
 		loadBalancer.UpsertServer(testutils.ParseURI(address))
 	}
 
-	streamer := NewStreamer(loadBalancer)
+	repeater := NewRepeater(loadBalancer)
+	go repeater.RepeateLoop()
+
+	streamer := NewStreamer(loadBalancer, repeater)
 
 	server := &http.Server{
 		Addr:    config.Address,

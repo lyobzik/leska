@@ -6,21 +6,27 @@ import (
 )
 
 type Streamer struct {
-	handler http.Handler
+	handler  http.Handler
+	repeater *Repeater
 }
 
-func NewStreamer(handler http.Handler) *Streamer {
-	return &Streamer{handler: handler}
+func NewStreamer(handler http.Handler, repeater *Repeater) *Streamer {
+	return &Streamer{handler: handler, repeater: repeater}
 }
 
 func (s *Streamer) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	success := false
 	outRequest, err := NewRequest(request)
 	if err != nil {
 		// Write error to log
 		s.responseError(response)
 		return
 	}
-	defer outRequest.Close()
+	defer func() {
+		if success {
+			outRequest.Close()
+		}
+	}()
 
 	outResponse, err := NewResponse()
 	if err != nil {
@@ -40,6 +46,7 @@ func (s *Streamer) ServeHTTP(response http.ResponseWriter, request *http.Request
 		statusCode := http.StatusAccepted
 		response.WriteHeader(statusCode)
 		response.Write([]byte(http.StatusText(statusCode)))
+		s.repeater.Add(outRequest)
 		return
 	}
 	if err := outResponse.Copy(response); err != nil {
@@ -47,6 +54,7 @@ func (s *Streamer) ServeHTTP(response http.ResponseWriter, request *http.Request
 		s.responseError(response)
 		return
 	}
+	success = true
 	log.Println(outResponse)
 	log.Println(response)
 }
