@@ -16,6 +16,7 @@ import (
 type Config struct {
 	Upstreams []string `short:"u" long:"upstream" required:"true"`
 	Address   string   `short:"a" long:"address" required:"true"`
+	Storage   string   `short:"s" long:"storage" default:"./storage"`
 }
 
 func ParseArgs() (Config, error) {
@@ -58,8 +59,10 @@ func main() {
 		loadBalancer.UpsertServer(testutils.ParseURI(address))
 	}
 
-	repeater := NewRepeater(loadBalancer)
-	go repeater.RepeateLoop()
+	repeater, err := NewRepeater(loadBalancer, config.Storage)
+	if err != nil {
+		log.Fatalf("cannot create repeater")
+	}
 
 	streamer := NewStreamer(loadBalancer, repeater)
 
@@ -75,7 +78,7 @@ func main() {
 		KillTimeout: 1 * time.Second,
 	}
 
-	if 	err = httpdown.ListenAndServe(server, serverWrapper); err != nil {
+	if err = httpdown.ListenAndServe(server, serverWrapper); err != nil {
 		log.Fatalf("Cannot start server: %v", err)
 	}
 

@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"github.com/mailgun/multibuf"
 	"github.com/pkg/errors"
 	"github.com/vulcand/oxy/utils"
 	"io/ioutil"
 	"net/http"
+	"os"
 )
 
 type Request struct {
@@ -32,6 +34,22 @@ func NewRequest(request *http.Request) (*Request, error) {
 	return outRequest, nil
 }
 
+func LoadRequest(filePath string) (*Request, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, errors.Wrap(err, "cannot open request file")
+	}
+	return loadRequest(file)
+}
+
+func loadRequest(file *os.File) (*Request, error) {
+	httpRequest, err := http.ReadRequest(bufio.NewReader(file))
+	if err != nil {
+		return nil, errors.Wrap(err, "cannot load request")
+	}
+	return NewRequest(httpRequest)
+}
+
 func (r *Request) copyRequest(req *http.Request, bodySize int64) {
 	r.httpRequest = *req
 	r.httpRequest.URL = utils.CopyURL(req.URL)
@@ -46,4 +64,9 @@ func (r *Request) copyRequest(req *http.Request, bodySize int64) {
 
 func (r *Request) Close() {
 	r.buffer.Close()
+}
+
+func (r *Request) Save(file *os.File) {
+	r.httpRequest.Write(file)
+	r.buffer.WriteTo(file)
 }
