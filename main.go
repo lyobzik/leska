@@ -1,14 +1,16 @@
 package main
 
 import (
+	"github.com/facebookgo/httpdown"
 	"github.com/jessevdk/go-flags"
 	"github.com/vulcand/oxy/forward"
 	"github.com/vulcand/oxy/roundrobin"
 	"github.com/vulcand/oxy/testutils"
+	"github.com/vulcand/oxy/utils"
 	"log"
 	"net/http"
-	"github.com/vulcand/oxy/utils"
 	"reflect"
+	"time"
 )
 
 type Config struct {
@@ -66,10 +68,16 @@ func main() {
 		Handler: streamer,
 	}
 
-	err = server.ListenAndServe()
-	if err != nil {
-		log.Fatalf("Cannot start server: %v", err)
-	}
 	// Прикруть graceful shutdown, которая бы останавливала прием/отправку запросов, а все запросы,
 	// которые оказались в процессе обработки сохранить на диск в рабочий каталог.
+	serverWrapper := &httpdown.HTTP{
+		StopTimeout: 10 * time.Second,
+		KillTimeout: 1 * time.Second,
+	}
+
+	if 	err = httpdown.ListenAndServe(server, serverWrapper); err != nil {
+		log.Fatalf("Cannot start server: %v", err)
+	}
+
+	repeater.Stop()
 }

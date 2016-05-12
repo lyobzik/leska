@@ -1,8 +1,14 @@
 hash: f34388a9c200ae8bc7545e14f796d014c2dbaae63966f922cad42c5f04274600
-updated: 2016-05-09T21:29:37.339986109+06:00
+updated: 2016-05-11T22:23:08.821094468+06:00
 imports:
 - name: github.com/codahale/hdrhistogram
   version: f8ad88b59a584afeee9d334eff879b104439117b
+- name: github.com/facebookgo/clock
+  version: 600d898af40aa09a7a93ecb9265d87b0504b6f03
+- name: github.com/facebookgo/httpdown
+  version: a3b1354551a26449fbe05f5d855937f6e7acbd71
+- name: github.com/facebookgo/stats
+  version: 1b76add642e42c6ffba7211ad7b3939ce654526e
 - name: github.com/jessevdk/go-flags
   version: 6b9493b3cb60367edd942144879646604089e3f7
 - name: github.com/mailgun/log
