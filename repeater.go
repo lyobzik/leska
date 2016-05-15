@@ -1,7 +1,6 @@
 package main
 
 import (
-	"github.com/pkg/errors"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -16,6 +15,7 @@ type Repeater struct {
 	waiter      sync.WaitGroup
 	storagePath string
 	stopping    chan struct{}
+	storer      *Storer
 }
 
 func NewRepeater(forwarder http.Handler, storage string) (*Repeater, error) {
@@ -24,10 +24,16 @@ func NewRepeater(forwarder http.Handler, storage string) (*Repeater, error) {
 		return nil, err
 	}
 
+	storer, err := NewStorer(storage)
+	if err != nil {
+		return nil, err
+	}
+
 	repeater := &Repeater{
 		forwarder:   forwarder,
 		storagePath: storage,
 		stopping:    make(chan struct{}, 1),
+		storer:      storer,
 	}
 
 	repeater.waiter.Add(1)
@@ -40,18 +46,12 @@ func (r *Repeater) Stop() {
 	r.waiter.Wait()
 }
 
-func (r *Repeater) Add(request *Request) error {
-	// Нужно придумать каким образом создавать файл атомарно, чтобы в repeateRequests мы не трогали файлы, которые еще полностью не записаны.
-	file, err := ioutil.TempFile(r.storagePath, "leska")
-	if err != nil {
-		return errors.Wrap(err, "cannot add request to repeater")
-	}
-	defer file.Close()
-	request.Save(file)
-	return nil
+func (r *Repeater) Add(request *Request) {
+	r.storer.Add(request)
 }
 
 func (r *Repeater) RepeateLoop() {
+	var currentChunk *LoadedChunk
 	for {
 		select {
 		case <-r.stopping:
@@ -59,7 +59,23 @@ func (r *Repeater) RepeateLoop() {
 			r.waiter.Done()
 			return
 		default:
-			r.repeateRequests()
+			if currentChunk == nil {
+				var err error
+				currentChunk, err = LoadAvailableChunk(r.storer.storageDir)
+				if err != nil {
+					time.Sleep(1 * time.Second)
+					log.Printf("cannot get chunk")
+				}
+			}
+			if currentChunk != nil {
+				err := r.repeateChunkRequest(currentChunk)
+				log.Printf("RepeateChunkRequest result: %v", err)
+				if err != nil {
+					currentChunk.Close()
+					currentChunk = nil
+				}
+				time.Sleep(10 * time.Second)
+			}
 		}
 	}
 }
@@ -87,8 +103,19 @@ func (r *Repeater) repeateFileRequest(fileName string) {
 	os.Remove(filePath)
 }
 
+func (r *Repeater) repeateChunkRequest(chunk *LoadedChunk) error {
+	request, err := chunk.GetRequest()
+	if err != nil {
+		return err
+	}
+	defer request.Close()
+	r.repeateRequest(request)
+
+	return nil
+}
+
 func (r *Repeater) repeateRequest(request *Request) {
-	log.Printf("Repeate request: %v", request)
+	log.Printf("repeate request: %v", request)
 	response, err := NewResponse()
 	if err != nil {
 		return

@@ -63,6 +63,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("cannot create repeater")
 	}
+	repeater.storer.Spawn()
 
 	streamer := NewStreamer(loadBalancer, repeater)
 
