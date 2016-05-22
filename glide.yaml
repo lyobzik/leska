@@ -14,3 +14,4 @@ import:
 - package: github.com/vulcand/predicate
 - package: github.com/jessevdk/go-flags
 - package: github.com/pkg/errors
+- package: github.com/op/go-logging

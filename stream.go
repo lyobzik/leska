@@ -1,17 +1,18 @@
 package main
 
 import (
-	"log"
+	"github.com/op/go-logging"
 	"net/http"
 )
 
 type Streamer struct {
+	logger   *logging.Logger
 	handler  http.Handler
 	repeater *Repeater
 }
 
-func NewStreamer(handler http.Handler, repeater *Repeater) *Streamer {
-	return &Streamer{handler: handler, repeater: repeater}
+func NewStreamer(logger *logging.Logger, handler http.Handler, repeater *Repeater) *Streamer {
+	return &Streamer{logger: logger, handler: handler, repeater: repeater}
 }
 
 func (s *Streamer) ServeHTTP(response http.ResponseWriter, request *http.Request) {
@@ -55,8 +56,8 @@ func (s *Streamer) ServeHTTP(response http.ResponseWriter, request *http.Request
 		return
 	}
 	success = true
-	log.Println(outResponse)
-	log.Println(response)
+	s.logger.Info(outResponse)
+	s.logger.Info(response)
 }
 
 func (s *Streamer) responseError(response http.ResponseWriter) {

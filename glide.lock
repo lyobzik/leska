@@ -1,5 +1,5 @@
-hash: f34388a9c200ae8bc7545e14f796d014c2dbaae63966f922cad42c5f04274600
-updated: 2016-05-11T22:23:08.821094468+06:00
+hash: 7549074de18463229372490b0d00358019b870cef4bb2c8c20099d56f6f47f45
+updated: 2016-05-22T14:00:15.302398884+06:00
 imports:
 - name: github.com/codahale/hdrhistogram
   version: f8ad88b59a584afeee9d334eff879b104439117b
@@ -19,6 +19,8 @@ imports:
   version: fd192d755b00c968d312d23f521eb0cdc6f66bd0
 - name: github.com/mailgun/ttlmap
   version: 16b258d86efc53ac5cf3e550604f566c32624fab
+- name: github.com/op/go-logging
+  version: 970db520ece77730c7e4724c61121037378659d9
 - name: github.com/pkg/errors
   version: 502e17a0cb34bd200593552492e458d89cf6a64f
 - name: github.com/vulcand/oxy

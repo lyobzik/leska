@@ -1,8 +1,8 @@
 package main
 
 import (
+	"github.com/op/go-logging"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -11,6 +11,7 @@ import (
 )
 
 type Repeater struct {
+	logger      *logging.Logger
 	forwarder   http.Handler
 	waiter      sync.WaitGroup
 	storagePath string
@@ -18,7 +19,7 @@ type Repeater struct {
 	storer      *Storer
 }
 
-func NewRepeater(forwarder http.Handler, storage string) (*Repeater, error) {
+func NewRepeater(logger *logging.Logger, forwarder http.Handler, storage string) (*Repeater, error) {
 	err := os.MkdirAll(storage, os.ModeDir|0777)
 	if err != nil {
 		return nil, err
@@ -28,8 +29,10 @@ func NewRepeater(forwarder http.Handler, storage string) (*Repeater, error) {
 	if err != nil {
 		return nil, err
 	}
+	storer.Spawn()
 
 	repeater := &Repeater{
+		logger:      logger,
 		forwarder:   forwarder,
 		storagePath: storage,
 		stopping:    make(chan struct{}, 1),
@@ -42,6 +45,9 @@ func NewRepeater(forwarder http.Handler, storage string) (*Repeater, error) {
 }
 
 func (r *Repeater) Stop() {
+	// TODO: Прикруть graceful shutdown, которая бы останавливала прием/отправку запросов, а все запросы,
+	// которые оказались в процессе обработки сохранить на диск в рабочий каталог.
+
 	close(r.stopping)
 	r.waiter.Wait()
 }
@@ -55,7 +61,7 @@ func (r *Repeater) RepeateLoop() {
 	for {
 		select {
 		case <-r.stopping:
-			log.Printf("receive stopping signal")
+			r.logger.Info("receive stopping signal")
 			r.waiter.Done()
 			return
 		default:
@@ -64,12 +70,12 @@ func (r *Repeater) RepeateLoop() {
 				currentChunk, err = LoadAvailableChunk(r.storer.storageDir)
 				if err != nil {
 					time.Sleep(1 * time.Second)
-					log.Printf("cannot get chunk")
+					r.logger.Error("cannot get chunk")
 				}
 			}
 			if currentChunk != nil {
 				err := r.repeateChunkRequest(currentChunk)
-				log.Printf("RepeateChunkRequest result: %v", err)
+				r.logger.Errorf("RepeateChunkRequest result: %v", err)
 				if err != nil {
 					currentChunk.Close()
 					currentChunk = nil
@@ -83,7 +89,7 @@ func (r *Repeater) RepeateLoop() {
 func (r *Repeater) repeateRequests() {
 	files, err := ioutil.ReadDir(r.storagePath)
 	if err != nil {
-		log.Printf("cannot get list of files in '%s': %v", r.storagePath, err)
+		r.logger.Errorf("cannot get list of files in '%s': %v", r.storagePath, err)
 	}
 	for _, file := range files {
 		r.repeateFileRequest(file.Name())
@@ -95,7 +101,7 @@ func (r *Repeater) repeateFileRequest(fileName string) {
 	filePath := filepath.Join(r.storagePath, fileName)
 	request, err := LoadRequest(filePath)
 	if err != nil {
-		log.Printf("cannot load request: %v", err)
+		r.logger.Errorf("cannot load request: %v", err)
 		return
 	}
 	defer request.Close()
@@ -115,7 +121,7 @@ func (r *Repeater) repeateChunkRequest(chunk *LoadedChunk) error {
 }
 
 func (r *Repeater) repeateRequest(request *Request) {
-	log.Printf("repeate request: %v", request)
+	r.logger.Infof("repeate request: %v", request)
 	response, err := NewResponse()
 	if err != nil {
 		return

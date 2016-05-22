@@ -3,16 +3,14 @@ package main
 import (
 	"github.com/facebookgo/httpdown"
 	"github.com/jessevdk/go-flags"
+	"github.com/op/go-logging"
+	"github.com/pkg/errors"
 	"github.com/vulcand/oxy/forward"
 	"github.com/vulcand/oxy/roundrobin"
-	"github.com/vulcand/oxy/testutils"
 	"github.com/vulcand/oxy/utils"
-	"log"
 	"net/http"
-	"reflect"
 	"time"
-	"io/ioutil"
-	"fmt"
+	"net/url"
 )
 
 type Config struct {
@@ -27,79 +25,57 @@ func ParseArgs() (Config, error) {
 	return config, err
 }
 
-func ErrorHandler(response http.ResponseWriter, request *http.Request, err error) {
-	// В целом это можно было бы и не делать, так как все равно все 500-е ошибки обрабатываются одинаково.
-	statusCode := http.StatusInternalServerError
-	if err != nil {
-		// net.Error может быть net.Temporary и net.Timeout нужно понять что это и правильно проверять.
-		// Думаю, что досылать нам нужно будет только в некоторых случаях. С другой стороны
-		// 502 может отвечать nginx на сервере и в этом случае тоже нужно досылать.
-		log.Printf("Error: %v - %v", reflect.TypeOf(err), err)
-		statusCode = HttpStatusNetworkError
-	}
-	response.WriteHeader(statusCode)
-	response.Write([]byte(http.StatusText(statusCode)))
-}
-
-func RunTestServer(address string) {
-	http.ListenAndServe(address, http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		file, err := ioutil.TempFile("tmp_server", fmt.Sprintf("%d_", time.Now().Unix()))
-		if err != nil {
-			log.Printf("cannot save request in tmp_server: %v", err)
-		}
-		defer file.Close()
-		request.Write(file)
-		response.WriteHeader(http.StatusOK)
-	}))
-}
-
-/////////////////////////////////////////////////
-func main() {
-	go RunTestServer(":8088")
-	go RunTestServer(":8089")
-	go RunTestServer(":8090")
-
-	config, err := ParseArgs()
-	if err != nil {
-		log.Fatalf("Cannot parse arguments")
-	}
+func CreateForwarder(logger *logging.Logger, upstreams []string) (http.Handler, error) {
 	forwarder, err := forward.New(forward.ErrorHandler(utils.ErrorHandlerFunc(ErrorHandler)))
 	if err != nil {
-		log.Fatalf("Cannot create forwarder")
+		return nil, errors.Wrapf(err, "cannot create forwarder")
 	}
 
 	loadBalancer, err := roundrobin.New(forwarder)
 	if err != nil {
-		log.Fatalf("Cannot create load balancer")
+		return nil, errors.Wrapf(err, "cannot create load balancer")
 	}
 
-	for _, address := range config.Upstreams {
-		loadBalancer.UpsertServer(testutils.ParseURI(address))
+	for _, upstream := range upstreams {
+		upstreamUrl, err := url.Parse(upstream)
+		if err != nil {
+			return nil, errors.Wrapf(err, "cannot parse upstream address '%s'", upstream)
+		}
+		loadBalancer.UpsertServer(upstreamUrl)
 	}
+	return loadBalancer, nil
+}
 
-	repeater, err := NewRepeater(loadBalancer, config.Storage)
-	if err != nil {
-		log.Fatalf("cannot create repeater")
-	}
-	repeater.storer.Spawn()
+/////////////////////////////////////////////////
+func main() {
+	//go RunTestServer(":8088")
+	//go RunTestServer(":8089")
+	//go RunTestServer(":8090")
 
-	streamer := NewStreamer(loadBalancer, repeater)
+	config, err := ParseArgs()
+	// TODO: возможно нужно в этом случае выводить usage.
+	HandleErrorWithoutLogger("cannot parse arguments", err)
 
-	server := &http.Server{
-		Addr:    config.Address,
-		Handler: streamer,
-	}
+	logger, err := CreateLogger(logging.INFO, "leska")
+	HandleErrorWithoutLogger("cannot create logger", err)
 
-	// Прикруть graceful shutdown, которая бы останавливала прием/отправку запросов, а все запросы,
-	// которые оказались в процессе обработки сохранить на диск в рабочий каталог.
-	serverWrapper := &httpdown.HTTP{
-		StopTimeout: 10 * time.Second,
-		KillTimeout: 1 * time.Second,
-	}
+	forwarder, err := CreateForwarder(logger, config.Upstreams)
+	HandleError(logger, "cannot create forwarder", err)
 
-	if err = httpdown.ListenAndServe(server, serverWrapper); err != nil {
-		log.Fatalf("Cannot start server: %v", err)
-	}
+	repeater, err := NewRepeater(logger, forwarder, config.Storage)
+	HandleError(logger, "cannot create repeater", err)
+	defer repeater.Stop()
 
-	repeater.Stop()
+	streamer := NewStreamer(logger, forwarder, repeater)
+
+	err = httpdown.ListenAndServe(
+		&http.Server{
+			Addr:    config.Address,
+			Handler: streamer,
+		},
+		&httpdown.HTTP{
+			StopTimeout: 10 * time.Second,
+			KillTimeout: 1 * time.Second,
+		})
+	HandleError(logger, "cannot start server", err)
 }
