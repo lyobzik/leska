@@ -21,6 +21,27 @@ func EnsureDirs(paths ...string) error {
 	return nil
 }
 
+// Close helpers
+type Closable interface {
+	Close()
+}
+
+func CloseOnFail(success bool, closable Closable) {
+	if !success {
+		closable.Close()
+	}
+}
+
+type TryClosable interface {
+	Close() error
+}
+
+func TryCloseOnFail(success bool, closable TryClosable) error {
+	if !success {
+		return closable.Close()
+	}
+	return nil
+}
 //
 func HandleErrorWithoutLogger(message string, err error) {
 	if err != nil {

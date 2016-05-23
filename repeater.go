@@ -65,6 +65,7 @@ func (r *Repeater) RepeateLoop() {
 			r.waiter.Done()
 			return
 		default:
+			// TODO: нужно добавить inotify для ослеживания содержимого каталог
 			if currentChunk == nil {
 				var err error
 				currentChunk, err = LoadAvailableChunk(r.storer.storageDir)

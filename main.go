@@ -26,7 +26,8 @@ func ParseArgs() (Config, error) {
 }
 
 func CreateForwarder(logger *logging.Logger, upstreams []string) (http.Handler, error) {
-	forwarder, err := forward.New(forward.ErrorHandler(utils.ErrorHandlerFunc(ErrorHandler)))
+	forwarder, err := forward.New(forward.Logger(logger),
+		forward.ErrorHandler(utils.ErrorHandlerFunc(ErrorHandler)))
 	if err != nil {
 		return nil, errors.Wrapf(err, "cannot create forwarder")
 	}
@@ -47,6 +48,8 @@ func CreateForwarder(logger *logging.Logger, upstreams []string) (http.Handler, 
 }
 
 /////////////////////////////////////////////////
+// TODO: возможно в эту задачу хорошо подойдет fasthttp. Нужно будет посмотреть
+// TODO: на сколько все станет сложнее.
 func main() {
 	//go RunTestServer(":8088")
 	//go RunTestServer(":8089")
@@ -66,7 +69,7 @@ func main() {
 	HandleError(logger, "cannot create repeater", err)
 	defer repeater.Stop()
 
-	streamer := NewStreamer(logger, forwarder, repeater)
+	streamer := NewStreamer(logger, repeater, forwarder)
 
 	err = httpdown.ListenAndServe(
 		&http.Server{
