@@ -48,7 +48,7 @@ func (s *Streamer) ServeHTTP(inResponse http.ResponseWriter, inRequest *http.Req
 }
 
 func (s *Streamer) copyRequestResponse(inRequest *http.Request) (*Request, *Response, error) {
-	request, err := NewRequest(inRequest)
+	request, err := NewRequest(inRequest, 1024 * 1024, 1024 * 1024)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "cannot copy request")
 	}

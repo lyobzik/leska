@@ -69,7 +69,7 @@ func LoadAvailableChunk(path string) (*LoadedChunk, error) {
 }
 
 func (c *LoadedChunk) GetRequest() (*Request, error) {
-	return loadRequest(c.file)
+	return LoadRequest(c.file, 1024 * 1024)
 }
 
 func (c *LoadedChunk) Close() {

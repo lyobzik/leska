@@ -2,10 +2,8 @@ package main
 
 import (
 	"github.com/op/go-logging"
-	"io/ioutil"
 	"net/http"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 )
@@ -85,29 +83,6 @@ func (r *Repeater) RepeateLoop() {
 			}
 		}
 	}
-}
-
-func (r *Repeater) repeateRequests() {
-	files, err := ioutil.ReadDir(r.storagePath)
-	if err != nil {
-		r.logger.Errorf("cannot get list of files in '%s': %v", r.storagePath, err)
-	}
-	for _, file := range files {
-		r.repeateFileRequest(file.Name())
-		time.Sleep(1 * time.Second)
-	}
-}
-
-func (r *Repeater) repeateFileRequest(fileName string) {
-	filePath := filepath.Join(r.storagePath, fileName)
-	request, err := LoadRequest(filePath)
-	if err != nil {
-		r.logger.Errorf("cannot load request: %v", err)
-		return
-	}
-	defer request.Close()
-	r.repeateRequest(request)
-	os.Remove(filePath)
 }
 
 func (r *Repeater) repeateChunkRequest(chunk *LoadedChunk) error {

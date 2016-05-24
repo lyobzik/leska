@@ -5,9 +5,14 @@ import (
 	"github.com/mailgun/multibuf"
 	"github.com/pkg/errors"
 	"github.com/vulcand/oxy/utils"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
+)
+
+const (
+	unlimiedSize = -1
 )
 
 type Request struct {
@@ -15,51 +20,27 @@ type Request struct {
 	buffer      multibuf.MultiReader
 }
 
-func NewRequest(request *http.Request) (*Request, error) {
-	body, err := multibuf.New(request.Body)
-	if err != nil {
-		return nil, errors.Wrap(err, "cannot create inner copy of request")
+func NewRequest(inRequest *http.Request, memoryBufferSize int64, maxSize int64) (*Request, error) {
+	if inRequest.ContentLength > maxSize && maxSize > unlimiedSize {
+		return nil, errors.Errorf("request exceeded size limit (%d > %d)",
+			inRequest.ContentLength, maxSize)
 	}
-	if body == nil {
-		return nil, errors.New("cannot create inner copy of request: empty body")
+	body, err := multibuf.New(inRequest.Body, multibuf.MemBytes(memoryBufferSize))
+	if err != nil {
+		return nil, errors.Wrap(err, "cannot copy request body")
 	}
 
-	bodySize, err := body.Size()
-	if err != nil {
-		return nil, errors.New("cannot create inner copy of request: empty body")
-	}
-
-	outRequest := &Request{buffer: body}
-	outRequest.copyRequest(request, bodySize)
-	return outRequest, nil
+	request := &Request{buffer: body}
+	request.copyRequest(inRequest)
+	return request, nil
 }
 
-func LoadRequest(filePath string) (*Request, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, errors.Wrap(err, "cannot open request file")
-	}
-	return loadRequest(file)
-}
-
-func loadRequest(file *os.File) (*Request, error) {
-	httpRequest, err := http.ReadRequest(bufio.NewReader(file))
+func LoadRequest(file io.Reader, memoryBufferSize int64) (*Request, error) {
+	request, err := http.ReadRequest(bufio.NewReader(file))
 	if err != nil {
 		return nil, errors.Wrap(err, "cannot load request")
 	}
-	return NewRequest(httpRequest)
-}
-
-func (r *Request) copyRequest(req *http.Request, bodySize int64) {
-	r.httpRequest = *req
-	r.httpRequest.URL = utils.CopyURL(req.URL)
-	r.httpRequest.Header = make(http.Header)
-	utils.CopyHeaders(r.httpRequest.Header, req.Header)
-	r.httpRequest.ContentLength = bodySize
-	// remove TransferEncoding that could have been previously set because we have transformed the request from chunked encoding
-	r.httpRequest.TransferEncoding = []string{}
-	// http.Transport will close the request body on any error, we are controlling the close process ourselves, so we override the closer here
-	r.httpRequest.Body = ioutil.NopCloser(r.buffer)
+	return NewRequest(request, memoryBufferSize, unlimiedSize)
 }
 
 func (r *Request) Close() {
@@ -69,4 +50,20 @@ func (r *Request) Close() {
 func (r *Request) Save(file *os.File) {
 	r.httpRequest.Write(file)
 	r.buffer.WriteTo(file)
+}
+
+func (r *Request) copyRequest(req *http.Request) {
+	copyRequest(&r.httpRequest, req, r.buffer)
+}
+
+// Helpers
+func copyRequest(dstRequest *http.Request, srcRequest *http.Request, buffer io.Reader) {
+	*(dstRequest) = *(srcRequest)
+	dstRequest.URL = utils.CopyURL(srcRequest.URL)
+	dstRequest.Header = make(http.Header)
+	utils.CopyHeaders(dstRequest.Header, srcRequest.Header)
+	dstRequest.ContentLength = srcRequest.ContentLength
+
+	dstRequest.TransferEncoding = []string{}
+	dstRequest.Body = ioutil.NopCloser(buffer)
 }
