@@ -9,6 +9,10 @@ import (
 	"time"
 )
 
+const (
+	HttpStatusNetworkError = 530
+)
+
 func ErrorHandler(response http.ResponseWriter, request *http.Request, err error) {
 	// В целом это можно было бы и не делать, так как все равно все 500-е ошибки обрабатываются одинаково.
 	statusCode := http.StatusInternalServerError

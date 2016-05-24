@@ -8,10 +8,6 @@ import (
 	"net/http"
 )
 
-const (
-	HttpStatusNetworkError = 530
-)
-
 type Response struct {
 	header http.Header
 	buffer multibuf.WriterOnce
@@ -21,15 +17,32 @@ type Response struct {
 func NewResponse() (*Response, error) {
 	buffer, err := multibuf.NewWriterOnce()
 	if err != nil {
-		return nil, errors.Wrap(err, "Cannot create response buffer")
+		return nil, errors.Wrap(err, "cannot create response buffer")
 	}
 
 	return &Response{
 		header: make(http.Header),
 		buffer: buffer,
+		code:   0,
 	}, nil
 }
 
+func (r *Response) Close() {
+	r.buffer.Close()
+}
+
+func (r *Response) Copy(response http.ResponseWriter) error {
+	reader, err := r.buffer.Reader()
+	if err != nil {
+		return errors.Wrap(err, "cannot read response body")
+	}
+	utils.CopyHeaders(response.Header(), r.Header())
+	response.WriteHeader(r.code)
+	io.Copy(response, reader)
+	return nil
+}
+
+// Implement http.ResponseWriter interface.
 func (r *Response) Header() http.Header {
 	return r.header
 }
@@ -40,19 +53,4 @@ func (r *Response) Write(data []byte) (int, error) {
 
 func (r *Response) WriteHeader(code int) {
 	r.code = code
-}
-
-func (r *Response) Close() {
-	r.buffer.Close()
-}
-
-func (r *Response) Copy(response http.ResponseWriter) error {
-	reader, err := r.buffer.Reader()
-	if err != nil {
-		return errors.Wrap(err, "Cannot copy response")
-	}
-	utils.CopyHeaders(response.Header(), r.Header())
-	response.WriteHeader(r.code)
-	io.Copy(response, reader)
-	return nil
 }
