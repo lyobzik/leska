@@ -15,3 +15,7 @@ import:
 - package: github.com/jessevdk/go-flags
 - package: github.com/pkg/errors
 - package: github.com/op/go-logging
+- package: golang.org/x/exp
+  subpackages:
+  - inotify
+- package: github.com/howeyc/fsnotify

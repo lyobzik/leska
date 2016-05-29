@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"github.com/pkg/errors"
 	"path/filepath"
+	"github.com/howeyc/fsnotify"
+	"log"
 )
 
 type Chunk struct {
@@ -84,6 +86,7 @@ type Storer struct {
 	requests chan *Request
 	waiter sync.WaitGroup
 	currentChunk *Chunk
+	ChunkFiles chan string
 }
 
 func NewStorer(storage string) (*Storer, error) {
@@ -101,6 +104,7 @@ func NewStorer(storage string) (*Storer, error) {
 		tmpDir: tmpDir,
 		requests: make(chan *Request, 100000),
 		currentChunk: currentChunk,
+		ChunkFiles: make(chan string, 100000),
 	}, nil
 }
 
@@ -108,14 +112,20 @@ func (s *Storer) Add(request *Request) {
 	s.requests <- request
 }
 
+func (s *Storer) LoadChunk(chunkName string) (*LoadedChunk, error) {
+	return LoadChunk(filepath.Join(s.storageDir, chunkName))
+}
+
 func (s *Storer) Spawn() {
 	s.waiter.Add(1)
 	go s.StoreLoop()
+	go s.ChunksWatch()
 }
 
 func (s *Storer) Stop() {
 	close(s.requests)
 	s.waiter.Wait()
+	// TODO: остановить ChunksWatch
 }
 
 func (s *Storer) StoreLoop() {
@@ -142,4 +152,39 @@ Loop:
 		}
 	}
 	s.waiter.Done()
+}
+
+func (s *Storer) ChunksWatch() {
+	defer close(s.ChunkFiles)
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		log.Fatalf("cannot create storage notifier: %v", err)
+	}
+	defer watcher.Close()
+	watcher.WatchFlags(s.storageDir, fsnotify.FSN_CREATE)
+
+	files, err := ioutil.ReadDir(s.storageDir)
+	if err != nil {
+		log.Fatalf("cannot get list of files in '%s'", s.storageDir)
+	}
+	for _, file := range files {
+		s.ChunkFiles <- file.Name()
+	}
+
+	for {
+		select {
+		case watchError, received := <- watcher.Error:
+			if !received {
+				return
+			}
+			log.Fatalf("watching error: %v", watchError)
+		case watchEvent, received := <- watcher.Event:
+			if !received {
+				return
+			}
+			if watchEvent.IsCreate() {
+				s.ChunkFiles <- watchEvent.Name
+			}
+		}
+	}
 }

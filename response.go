@@ -42,6 +42,10 @@ func (r *Response) Copy(response http.ResponseWriter) error {
 	return nil
 }
 
+func (r *Response) IsFailed() bool {
+	return 500 <= r.code && r.code < 600
+}
+
 // Implement http.ResponseWriter interface.
 func (r *Response) Header() http.Header {
 	return r.header

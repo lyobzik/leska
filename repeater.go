@@ -2,112 +2,134 @@ package main
 
 import (
 	"github.com/op/go-logging"
+	"github.com/pkg/errors"
+	"io"
 	"net/http"
-	"os"
 	"sync"
-	"time"
 )
 
 type Repeater struct {
-	logger      *logging.Logger
-	forwarder   http.Handler
-	waiter      sync.WaitGroup
-	storagePath string
-	stopping    chan struct{}
-	storer      *Storer
+	logger   *logging.Logger
+	handler  http.Handler
+	storer   *Storer
+	waitDone sync.WaitGroup
+	stopping chan struct{}
 }
 
-func NewRepeater(logger *logging.Logger, forwarder http.Handler, storage string) (*Repeater, error) {
-	err := os.MkdirAll(storage, os.ModeDir|0777)
-	if err != nil {
-		return nil, err
-	}
-
+func NewRepeater(logger *logging.Logger, handler http.Handler, storage string) (*Repeater, error) {
 	storer, err := NewStorer(storage)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "cannot create storer")
 	}
-	storer.Spawn()
 
 	repeater := &Repeater{
-		logger:      logger,
-		forwarder:   forwarder,
-		storagePath: storage,
-		stopping:    make(chan struct{}, 1),
-		storer:      storer,
+		logger:   logger,
+		handler:  handler,
+		storer:   storer,
+		stopping: make(chan struct{}, 1),
 	}
+	repeater.Start()
 
-	repeater.waiter.Add(1)
-	go repeater.RepeateLoop()
 	return repeater, nil
 }
 
-func (r *Repeater) Stop() {
-	// TODO: Прикруть graceful shutdown, которая бы останавливала прием/отправку запросов, а все запросы,
-	// которые оказались в процессе обработки сохранить на диск в рабочий каталог.
+func (r *Repeater) Start() {
+	r.storer.Spawn()
 
+	r.waitDone.Add(1)
+	go r.repeateLoop()
+}
+
+func (r *Repeater) Stop() {
 	close(r.stopping)
-	r.waiter.Wait()
+	r.waitDone.Wait()
+
+	r.storer.Stop()
 }
 
 func (r *Repeater) Add(request *Request) {
 	r.storer.Add(request)
 }
 
-func (r *Repeater) RepeateLoop() {
-	var currentChunk *LoadedChunk
+func (r *Repeater) repeateLoop() {
+	defer r.waitDone.Done()
+
 	for {
 		select {
 		case <-r.stopping:
 			r.logger.Info("receive stopping signal")
-			r.waiter.Done()
 			return
-		default:
-			// TODO: нужно добавить inotify для ослеживания содержимого каталог
-			if currentChunk == nil {
-				var err error
-				currentChunk, err = LoadAvailableChunk(r.storer.storageDir)
-				if err != nil {
-					time.Sleep(1 * time.Second)
-					r.logger.Error("cannot get chunk")
-				}
+		case chunk, received := <-r.storer.ChunkFiles:
+			if !received {
+				return
 			}
-			if currentChunk != nil {
-				err := r.repeateChunkRequest(currentChunk)
-				r.logger.Errorf("RepeateChunkRequest result: %v", err)
-				if err != nil {
-					currentChunk.Close()
-					currentChunk = nil
-				}
-				time.Sleep(10 * time.Second)
-			}
+			r.repeateChunk(chunk)
 		}
 	}
 }
 
-func (r *Repeater) repeateChunkRequest(chunk *LoadedChunk) error {
-	request, err := chunk.GetRequest()
+func (r *Repeater) repeateChunk(chunkName string) {
+	chunk, err := r.storer.LoadChunk(chunkName)
 	if err != nil {
-		return err
+		r.logger.Errorf("cannot load chunk from '%s': %v", chunkName, err)
+		return
 	}
-	defer request.Close()
-	r.repeateRequest(request)
+	chunk.Close()
 
-	return nil
+	//for {
+	//	request, err := chunk.GetRequest()
+	//	// TODO: доделать, так как err это может быть обернутый io.EOF
+	//	if err == io.EOF {
+	//		return
+	//	} else if err != nil {
+	//		r.logger.Errorf("cannot load request from chunk '%s': %v", chunk, err)
+	//	}
+	//
+	//	r.repeateRequest(request)
+	//	// Закрываем явно, чтобы бысрее освобождалась память.
+	//	request.Close()
+	//}
+
+	for r.repeateChunkRequest(chunk) {}
+
+}
+
+func (r *Repeater) repeateChunkRequest(chunk *LoadedChunk) bool {
+	if request, err := chunk.GetRequest(); err == nil {
+		defer request.Close()
+		r.repeateRequest(request)
+	} else if err == io.EOF {
+		// TODO: доделать, так как err это может быть обернутый io.EOF
+		return false
+	} else if err != nil {
+		r.logger.Errorf("cannot load request from chunk '%s': %v", chunk, err)
+	}
+	return true
+}
+
+func (r *Repeater) getRequest(chuckName string, chunk *LoadedChunk) *Request {
+	for {
+		if request, err := chunk.GetRequest(); err == nil {
+			return request
+		} else if err == io.EOF {
+			// TODO: доделать, так как err это может быть обернутый io.EOF
+			return nil
+		} else {
+			r.logger.Errorf("cannot load request from chunk '%s': %v", chuckName, err)
+		}
+	}
 }
 
 func (r *Repeater) repeateRequest(request *Request) {
-	r.logger.Infof("repeate request: %v", request)
 	response, err := NewResponse()
 	if err != nil {
 		return
 	}
 	defer response.Close()
 
-	r.forwarder.ServeHTTP(response, &request.httpRequest)
-	if 500 <= response.code && response.code < 600 {
+	r.handler.ServeHTTP(response, &request.httpRequest)
+	if response.IsFailed() {
+		r.logger.Errorf("cannot repeate request: %v", request)
 		r.Add(request)
-		return
 	}
-	request.Close()
 }

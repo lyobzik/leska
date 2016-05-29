@@ -8,19 +8,20 @@ import (
 
 type Streamer struct {
 	logger   *logging.Logger
-	repeater *Repeater
 	handler  http.Handler
+	repeater *Repeater
 }
 
 func NewStreamer(logger *logging.Logger, repeater *Repeater, handler http.Handler) *Streamer {
 	return &Streamer{
 		logger:   logger,
-		repeater: repeater,
 		handler:  handler,
+		repeater: repeater,
 	}
 }
 
 func (s *Streamer) ServeHTTP(inResponse http.ResponseWriter, inRequest *http.Request) {
+	// TODO: возможно inRequest можно скопировать после неудачной попытке отправки.
 	request, response, err := s.copyRequestResponse(inRequest)
 	if err != nil {
 		s.responseError(inResponse, err)
@@ -35,7 +36,7 @@ func (s *Streamer) ServeHTTP(inResponse http.ResponseWriter, inRequest *http.Req
 
 	s.handler.ServeHTTP(response, &request.httpRequest)
 
-	if 500 <= response.code && response.code < 600 {
+	if response.IsFailed() {
 		s.writeResponse(inResponse, http.StatusAccepted)
 		s.repeater.Add(request)
 		repeateRequest = true

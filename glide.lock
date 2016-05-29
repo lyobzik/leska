@@ -1,5 +1,5 @@
-hash: 7549074de18463229372490b0d00358019b870cef4bb2c8c20099d56f6f47f45
-updated: 2016-05-22T14:00:15.302398884+06:00
+hash: 54284d3dc099c82efa677e1454f9acd8cc7aedf0741e53b24ff085147dd1b66f
+updated: 2016-05-29T11:04:51.771312207+06:00
 imports:
 - name: github.com/codahale/hdrhistogram
   version: f8ad88b59a584afeee9d334eff879b104439117b
@@ -9,6 +9,8 @@ imports:
   version: a3b1354551a26449fbe05f5d855937f6e7acbd71
 - name: github.com/facebookgo/stats
   version: 1b76add642e42c6ffba7211ad7b3939ce654526e
+- name: github.com/howeyc/fsnotify
+  version: f0c08ee9c60704c1879025f2ae0ff3e000082c13
 - name: github.com/jessevdk/go-flags
   version: 6b9493b3cb60367edd942144879646604089e3f7
 - name: github.com/mailgun/log
@@ -33,6 +35,10 @@ imports:
   - roundrobin
 - name: github.com/vulcand/predicate
   version: cb0bff91a7ab7cf7571e661ff883fc997bc554a3
+- name: golang.org/x/exp
+  version: 0dc1be49343a5449f98e0d6d15e33008e154701b
+  subpackages:
+  - inotify
 - name: gopkg.in/mgo.v2
   version: b6e2fa371e64216a45e61072a96d4e3859f169da
   subpackages:
