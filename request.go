@@ -47,9 +47,12 @@ func (r *Request) Close() {
 	r.buffer.Close()
 }
 
-func (r *Request) Save(file *os.File) {
-	r.httpRequest.Write(file)
-	r.buffer.WriteTo(file)
+func (r *Request) Save(file *os.File) error {
+	err := r.httpRequest.Write(file)
+	if err == nil {
+		_, err = r.buffer.WriteTo(file)
+	}
+	return err
 }
 
 func (r *Request) copyRequest(req *http.Request) {

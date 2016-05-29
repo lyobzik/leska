@@ -1,114 +1,103 @@
 package main
 
 import (
-	"path"
-	"sync"
-	"time"
-	"os"
-	"io/ioutil"
 	"fmt"
-	"github.com/pkg/errors"
-	"path/filepath"
 	"github.com/howeyc/fsnotify"
+	"github.com/op/go-logging"
+	"github.com/pkg/errors"
+	"io/ioutil"
 	"log"
+	"os"
+	"path"
+	"path/filepath"
+	"time"
 )
 
-type Chunk struct {
-	file *os.File
+type WriteChunk struct {
+	file    *os.File
 	IsEmpty bool
-	path string
 }
 
-func NewChunk(path string) (*Chunk, error) {
+func NewChunk(path string) (*WriteChunk, error) {
 	prefix := fmt.Sprintf("%d_", time.Now().Unix())
 	file, err := ioutil.TempFile(path, prefix)
 	if err != nil {
 		return nil, errors.Wrapf(err, "cannot create chunk '%s'", prefix)
 	}
-	return &Chunk{file: file, IsEmpty: true, path: path}, nil
+	return &WriteChunk{file: file, IsEmpty: true}, nil
 }
 
-func (c *Chunk) Store(request *Request) {
-	request.Save(c.file)
+func (c *WriteChunk) Store(request *Request) error {
+	if err := request.Save(c.file); err != nil {
+		return errors.Wrapf(err, "cannot save request to chunk '%s'", c.name())
+	}
 	c.IsEmpty = false
+	return nil
 }
 
-func (c *Chunk) Finalize(resultDir string) error {
-	c.file.Close()
-	err := os.Rename(c.file.Name(), path.Join(resultDir, path.Base(c.file.Name())))
-	if err != nil {
-		return errors.Wrapf(err, "cannot finalize chunk '%s'", c.file.Name())
+func (c *WriteChunk) Finalize(path string) error {
+	if err := c.file.Close(); err != nil {
+		return errors.Wrapf(err, "cannot close chunk '%s'", c.name())
+	}
+	if err := os.Rename(c.file.Name(), filepath.Join(path, c.name())); err != nil {
+		return errors.Wrapf(err, "cannot move chunk '%s' to storage '%s'", c.name(), path)
 	}
 	return nil
 }
 
-//////////////////////
-type LoadedChunk struct {
-	file *os.File
-}
-
-func LoadChunk(path string) (*LoadedChunk, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, errors.Wrap(err, "cannot open request file")
-	}
-	return &LoadedChunk{file: file}, nil
-}
-
-func LoadAvailableChunk(path string) (*LoadedChunk, error) {
-	files, err := ioutil.ReadDir(path)
-	if err != nil {
-		return nil, errors.Wrapf(err, "cannot get list of files in '%s'", path)
-	}
-	if len(files) == 0 {
-		return nil, nil
-	}
-	chunk, err := LoadChunk(filepath.Join(path, files[0].Name()))
-	if err != nil {
-		return nil, errors.Wrapf(err, "cannot load chunk")
-	}
-	return chunk, err
-}
-
-func (c *LoadedChunk) Name() string {
+func (c *WriteChunk) name() string {
 	return c.file.Name()
 }
 
-func (c *LoadedChunk) GetRequest() (*Request, error) {
-	return LoadRequest(c.file, 1024 * 1024)
+//////////////////////
+type ReadChunk struct {
+	file *os.File
 }
 
-func (c *LoadedChunk) Close() {
+func LoadChunk(path string) (*ReadChunk, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, errors.Wrap(err, "cannot open chunk file")
+	}
+	return &ReadChunk{file: file}, nil
+}
+
+func (c *ReadChunk) Name() string {
+	return c.file.Name()
+}
+
+func (c *ReadChunk) GetRequest() (*Request, error) {
+	return LoadRequest(c.file, 1024*1024)
+}
+
+func (c *ReadChunk) Close() {
 	c.file.Close()
 	os.Remove(c.file.Name())
 }
 
 //////////////////////
 type Storer struct {
+	logger     *logging.Logger
 	storageDir string
 	tmpDir     string
-	requests chan *Request
-	waiter sync.WaitGroup
-	currentChunk *Chunk
-	ChunkFiles chan string
+	requests   chan *Request
+	Chunks     chan string
+	stopper    *Stopper
 }
 
-func NewStorer(storage string) (*Storer, error) {
+func NewStorer(logger *logging.Logger, storage string) (*Storer, error) {
 	storageDir := path.Join(storage, "storage")
 	tmpDir := path.Join(storage, "tmp")
 	if err := EnsureDirs(storageDir, tmpDir); err != nil {
-		return nil, err
-	}
-	currentChunk, err := NewChunk(tmpDir)
-	if err != nil {
-		return nil, errors.Wrap(err, "cannot create chunk")
+		return nil, errors.Wrap(err, "cannot create storage directory")
 	}
 
-	return &Storer{storageDir: storageDir,
-		tmpDir: tmpDir,
-		requests: make(chan *Request, 100000),
-		currentChunk: currentChunk,
-		ChunkFiles: make(chan string, 100000),
+	return &Storer{logger: logger,
+		storageDir: storageDir,
+		tmpDir:     tmpDir,
+		requests:   make(chan *Request, 100000),
+		Chunks:     make(chan string, 100000),
+		stopper:    NewStopper(),
 	}, nil
 }
 
@@ -116,50 +105,57 @@ func (s *Storer) Add(request *Request) {
 	s.requests <- request
 }
 
-func (s *Storer) LoadChunk(chunkName string) (*LoadedChunk, error) {
+func (s *Storer) LoadChunk(chunkName string) (*ReadChunk, error) {
 	return LoadChunk(filepath.Join(s.storageDir, chunkName))
 }
 
 func (s *Storer) Spawn() {
-	s.waiter.Add(1)
+	s.stopper.Add()
 	go s.StoreLoop()
+	s.stopper.Add()
 	go s.ChunksWatch()
 }
 
 func (s *Storer) Stop() {
 	close(s.requests)
-	s.waiter.Wait()
-	// TODO: остановить ChunksWatch
+	s.stopper.Stop()
+	s.stopper.WaitDone()
 }
 
 func (s *Storer) StoreLoop() {
+	defer s.stopper.Done()
+	currentChunk, err := NewChunk(s.tmpDir)
+	if err != nil {
+		s.logger.Errorf("cannot create chunk: %v", err)
+		return
+	}
 	timer := time.Tick(5 * time.Second)
 Loop:
 	for {
 		select {
-		case request, received := <- s.requests:
+		case request, received := <-s.requests:
 			if !received {
 				break Loop
 			}
-			s.currentChunk.Store(request)
+			currentChunk.Store(request)
 			request.Close()
 		case <-timer:
-			if !s.currentChunk.IsEmpty {
-				s.currentChunk.Finalize(s.storageDir)
-				currentChunk, err := NewChunk(s.tmpDir)
+			if !currentChunk.IsEmpty {
+				currentChunk.Finalize(s.storageDir)
+				var err error
+				currentChunk, err = NewChunk(s.tmpDir)
 				if err != nil {
 					// Write error to log and finish service
 					break Loop
 				}
-				s.currentChunk = currentChunk
 			}
 		}
 	}
-	s.waiter.Done()
 }
 
 func (s *Storer) ChunksWatch() {
-	defer close(s.ChunkFiles)
+	defer s.stopper.Done()
+	defer close(s.Chunks)
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		log.Fatalf("cannot create storage notifier: %v", err)
@@ -172,23 +168,25 @@ func (s *Storer) ChunksWatch() {
 		log.Fatalf("cannot get list of files in '%s'", s.storageDir)
 	}
 	for _, file := range files {
-		s.ChunkFiles <- file.Name()
+		s.Chunks <- file.Name()
 	}
 
 	for {
 		select {
-		case watchError, received := <- watcher.Error:
+		case watchError, received := <-watcher.Error:
 			if !received {
 				return
 			}
 			log.Fatalf("watching error: %v", watchError)
-		case watchEvent, received := <- watcher.Event:
+		case watchEvent, received := <-watcher.Event:
 			if !received {
 				return
 			}
 			if watchEvent.IsCreate() {
-				s.ChunkFiles <- watchEvent.Name
+				s.Chunks <- watchEvent.Name
 			}
+		case <- s.stopper.Stopping:
+			return
 		}
 	}
 }

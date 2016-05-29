@@ -16,7 +16,7 @@ type Repeater struct {
 }
 
 func NewRepeater(logger *logging.Logger, handler http.Handler, storage string) (*Repeater, error) {
-	storer, err := NewStorer(storage)
+	storer, err := NewStorer(logger, storage)
 	if err != nil {
 		return nil, errors.Wrap(err, "cannot create storer")
 	}
@@ -58,7 +58,7 @@ func (r *Repeater) repeateLoop() {
 		case <-r.stopping:
 			r.logger.Info("receive stopping signal")
 			return
-		case chunk, received := <-r.storer.ChunkFiles:
+		case chunk, received := <-r.storer.Chunks:
 			if !received {
 				return
 			}
@@ -78,7 +78,7 @@ func (r *Repeater) repeateChunk(chunkName string) {
 	for r.repeateChunkRequest(chunk) {}
 }
 
-func (r *Repeater) repeateChunkRequest(chunk *LoadedChunk) bool {
+func (r *Repeater) repeateChunkRequest(chunk *ReadChunk) bool {
 	if request, err := chunk.GetRequest(); err == nil {
 		defer request.Close()
 		r.repeateRequest(request)
