@@ -1,86 +1,21 @@
-package main
+package storage
 
 import (
-	"fmt"
 	"github.com/howeyc/fsnotify"
 	"github.com/op/go-logging"
 	"github.com/pkg/errors"
 	"io/ioutil"
 	"log"
-	"os"
 	"path"
 	"path/filepath"
 	"time"
 )
 
-type WriteChunk struct {
-	file    *os.File
-	IsEmpty bool
-}
-
-func NewChunk(path string) (*WriteChunk, error) {
-	prefix := fmt.Sprintf("%d_", time.Now().Unix())
-	file, err := ioutil.TempFile(path, prefix)
-	if err != nil {
-		return nil, errors.Wrapf(err, "cannot create chunk '%s'", prefix)
-	}
-	return &WriteChunk{file: file, IsEmpty: true}, nil
-}
-
-func (c *WriteChunk) Store(request *Request) error {
-	if err := request.Save(c.file); err != nil {
-		return errors.Wrapf(err, "cannot save request to chunk '%s'", c.name())
-	}
-	c.IsEmpty = false
-	return nil
-}
-
-func (c *WriteChunk) Finalize(path string) error {
-	if err := c.file.Close(); err != nil {
-		return errors.Wrapf(err, "cannot close chunk '%s'", c.name())
-	}
-	if err := os.Rename(c.file.Name(), filepath.Join(path, c.name())); err != nil {
-		return errors.Wrapf(err, "cannot move chunk '%s' to storage '%s'", c.name(), path)
-	}
-	return nil
-}
-
-func (c *WriteChunk) name() string {
-	return c.file.Name()
-}
-
-//////////////////////
-type ReadChunk struct {
-	file *os.File
-}
-
-func LoadChunk(path string) (*ReadChunk, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, errors.Wrap(err, "cannot open chunk file")
-	}
-	return &ReadChunk{file: file}, nil
-}
-
-func (c *ReadChunk) Name() string {
-	return c.file.Name()
-}
-
-func (c *ReadChunk) GetRequest() (*Request, error) {
-	return LoadRequest(c.file, 1024*1024)
-}
-
-func (c *ReadChunk) Close() {
-	c.file.Close()
-	os.Remove(c.file.Name())
-}
-
-//////////////////////
 type Storer struct {
 	logger     *logging.Logger
 	storageDir string
 	tmpDir     string
-	requests   chan *Request
+	data       chan Data
 	Chunks     chan string
 	stopper    *Stopper
 }
@@ -95,14 +30,14 @@ func NewStorer(logger *logging.Logger, storage string) (*Storer, error) {
 	return &Storer{logger: logger,
 		storageDir: storageDir,
 		tmpDir:     tmpDir,
-		requests:   make(chan *Request, 100000),
+		data:       make(chan Data, 100000),
 		Chunks:     make(chan string, 100000),
 		stopper:    NewStopper(),
 	}, nil
 }
 
-func (s *Storer) Add(request *Request) {
-	s.requests <- request
+func (s *Storer) Add(data Data) {
+	s.data <- data
 }
 
 func (s *Storer) LoadChunk(chunkName string) (*ReadChunk, error) {
@@ -117,7 +52,7 @@ func (s *Storer) Spawn() {
 }
 
 func (s *Storer) Stop() {
-	close(s.requests)
+	close(s.data)
 	s.stopper.Stop()
 	s.stopper.WaitDone()
 }
@@ -133,12 +68,12 @@ func (s *Storer) StoreLoop() {
 Loop:
 	for {
 		select {
-		case request, received := <-s.requests:
+		case data, received := <-s.data:
 			if !received {
 				break Loop
 			}
-			currentChunk.Store(request)
-			request.Close()
+			currentChunk.Store(data)
+			data.Close()
 		case <-timer:
 			if !currentChunk.IsEmpty {
 				currentChunk.Finalize(s.storageDir)
@@ -185,7 +120,7 @@ func (s *Storer) ChunksWatch() {
 			if watchEvent.IsCreate() {
 				s.Chunks <- watchEvent.Name
 			}
-		case <- s.stopper.Stopping:
+		case <-s.stopper.Stopping:
 			return
 		}
 	}

@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
-	"os"
 )
 
 const (
@@ -47,7 +46,7 @@ func (r *Request) Close() {
 	r.buffer.Close()
 }
 
-func (r *Request) Save(file *os.File) error {
+func (r *Request) Save(file io.Writer) error {
 	err := r.httpRequest.Write(file)
 	if err == nil {
 		_, err = r.buffer.WriteTo(file)

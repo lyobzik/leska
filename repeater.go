@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/op/go-logging"
 	"github.com/pkg/errors"
+	"github.com/lyobzik/leska/storage"
 	"net/http"
 	"sync"
 )
@@ -10,13 +11,13 @@ import (
 type Repeater struct {
 	logger   *logging.Logger
 	handler  http.Handler
-	storer   *Storer
+	storer   *storage.Storer
 	waitDone sync.WaitGroup
 	stopping chan struct{}
 }
 
-func NewRepeater(logger *logging.Logger, handler http.Handler, storage string) (*Repeater, error) {
-	storer, err := NewStorer(logger, storage)
+func NewRepeater(logger *logging.Logger, handler http.Handler, path string) (*Repeater, error) {
+	storer, err := storage.NewStorer(logger, path)
 	if err != nil {
 		return nil, errors.Wrap(err, "cannot create storer")
 	}
@@ -78,8 +79,8 @@ func (r *Repeater) repeateChunk(chunkName string) {
 	for r.repeateChunkRequest(chunk) {}
 }
 
-func (r *Repeater) repeateChunkRequest(chunk *ReadChunk) bool {
-	if request, err := chunk.GetRequest(); err == nil {
+func (r *Repeater) repeateChunkRequest(chunk *storage.ReadChunk) bool {
+	if request, err := LoadRequest(chunk.Reader(), 1024*1024); err == nil {
 		defer request.Close()
 		r.repeateRequest(request)
 	} else if IsEndOfFileError(err) {
