@@ -5,6 +5,7 @@ import (
 	"github.com/op/go-logging"
 	"github.com/pkg/errors"
 	"log"
+	"io"
 )
 
 // Filesystem helpers
@@ -42,7 +43,12 @@ func TryCloseOnFail(success bool, closable TryClosable) error {
 	}
 	return nil
 }
+
 //
+func IsEndOfFileError(err error) bool {
+	return errors.Cause(err) == io.EOF
+}
+
 func HandleErrorWithoutLogger(message string, err error) {
 	if err != nil {
 		log.Fatalf("%s: %v\n", message, err)

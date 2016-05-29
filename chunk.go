@@ -70,6 +70,10 @@ func LoadAvailableChunk(path string) (*LoadedChunk, error) {
 	return chunk, err
 }
 
+func (c *LoadedChunk) Name() string {
+	return c.file.Name()
+}
+
 func (c *LoadedChunk) GetRequest() (*Request, error) {
 	return LoadRequest(c.file, 1024 * 1024)
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"github.com/op/go-logging"
 	"github.com/pkg/errors"
-	"io"
 	"net/http"
 	"sync"
 )
@@ -74,50 +73,21 @@ func (r *Repeater) repeateChunk(chunkName string) {
 		r.logger.Errorf("cannot load chunk from '%s': %v", chunkName, err)
 		return
 	}
-	chunk.Close()
-
-	//for {
-	//	request, err := chunk.GetRequest()
-	//	// TODO: доделать, так как err это может быть обернутый io.EOF
-	//	if err == io.EOF {
-	//		return
-	//	} else if err != nil {
-	//		r.logger.Errorf("cannot load request from chunk '%s': %v", chunk, err)
-	//	}
-	//
-	//	r.repeateRequest(request)
-	//	// Закрываем явно, чтобы бысрее освобождалась память.
-	//	request.Close()
-	//}
+	defer chunk.Close()
 
 	for r.repeateChunkRequest(chunk) {}
-
 }
 
 func (r *Repeater) repeateChunkRequest(chunk *LoadedChunk) bool {
 	if request, err := chunk.GetRequest(); err == nil {
 		defer request.Close()
 		r.repeateRequest(request)
-	} else if err == io.EOF {
-		// TODO: доделать, так как err это может быть обернутый io.EOF
+	} else if IsEndOfFileError(err) {
 		return false
 	} else if err != nil {
-		r.logger.Errorf("cannot load request from chunk '%s': %v", chunk, err)
+		r.logger.Errorf("cannot load request from chunk '%s': %v", chunk.Name(), err)
 	}
 	return true
-}
-
-func (r *Repeater) getRequest(chuckName string, chunk *LoadedChunk) *Request {
-	for {
-		if request, err := chunk.GetRequest(); err == nil {
-			return request
-		} else if err == io.EOF {
-			// TODO: доделать, так как err это может быть обернутый io.EOF
-			return nil
-		} else {
-			r.logger.Errorf("cannot load request from chunk '%s': %v", chuckName, err)
-		}
-	}
 }
 
 func (r *Repeater) repeateRequest(request *Request) {
