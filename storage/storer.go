@@ -1,11 +1,8 @@
 package storage
 
 import (
-	"github.com/howeyc/fsnotify"
 	"github.com/op/go-logging"
 	"github.com/pkg/errors"
-	"io/ioutil"
-	"log"
 	"path"
 	"path/filepath"
 	"time"
@@ -46,9 +43,7 @@ func (s *Storer) LoadChunk(chunkName string) (*ReadChunk, error) {
 
 func (s *Storer) Spawn() {
 	s.stopper.Add()
-	go s.StoreLoop()
-	s.stopper.Add()
-	go s.ChunksWatch()
+	go s.storeLoop()
 }
 
 func (s *Storer) Stop() {
@@ -57,71 +52,79 @@ func (s *Storer) Stop() {
 	s.stopper.WaitDone()
 }
 
-func (s *Storer) StoreLoop() {
+func (s *Storer) storeLoop() {
 	defer s.stopper.Done()
+
+	finalizedChunks, err := GetFiles(s.storageDir)
+	if err != nil {
+		s.logger.Errorf("cannot read inialized chunk list: %v", err)
+		return
+	}
+
 	currentChunk, err := NewChunk(s.tmpDir)
+	// TODO: нужно закрывать currentChunk, но при этом не закрывать его дважды. То есть простой defer не поможет.
 	if err != nil {
 		s.logger.Errorf("cannot create chunk: %v", err)
 		return
 	}
+	defer func() {
+		currentChunk.Finalize(s.storageDir)
+	}()
+	// TODO: нужно задавать время жизни чанка в конфиге
 	timer := time.Tick(5 * time.Second)
-Loop:
-	for {
-		select {
-		case data, received := <-s.data:
-			if !received {
-				break Loop
-			}
-			currentChunk.Store(data)
-			data.Close()
-		case <-timer:
-			if !currentChunk.IsEmpty {
-				currentChunk.Finalize(s.storageDir)
-				var err error
-				currentChunk, err = NewChunk(s.tmpDir)
-				if err != nil {
-					// Write error to log and finish service
-					break Loop
+
+	mayRun := false
+	for mayRun {
+		if len(finalizedChunks) == 0 {
+			select {
+			case data, received := <-s.data:
+				mayRun = s.handleData(currentChunk, data, received)
+			case <-timer:
+				var name string
+				mayRun, name, currentChunk = s.finalizeChunk(currentChunk)
+				if mayRun && len(name) == 0 {
+					finalizedChunks = append(finalizedChunks, name)
 				}
+			}
+		} else {
+			select {
+			case data, received := <-s.data:
+				mayRun = s.handleData(currentChunk, data, received)
+			case <-timer:
+				var name string
+				mayRun, name, currentChunk = s.finalizeChunk(currentChunk)
+				if mayRun && len(name) == 0 {
+					finalizedChunks = append(finalizedChunks, name)
+				}
+			case s.Chunks <- finalizedChunks[0]:
+				finalizedChunks = finalizedChunks[1:]
 			}
 		}
 	}
 }
 
-func (s *Storer) ChunksWatch() {
-	defer s.stopper.Done()
-	defer close(s.Chunks)
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		log.Fatalf("cannot create storage notifier: %v", err)
+func (s *Storer) handleData(chunk *WriteChunk, data Data, received bool) bool {
+	if !received {
+		return false
 	}
-	defer watcher.Close()
-	watcher.WatchFlags(s.storageDir, fsnotify.FSN_CREATE)
+	chunk.Store(data)
+	data.Close()
+	return true
+}
 
-	files, err := ioutil.ReadDir(s.storageDir)
-	if err != nil {
-		log.Fatalf("cannot get list of files in '%s'", s.storageDir)
-	}
-	for _, file := range files {
-		s.Chunks <- file.Name()
-	}
-
-	for {
-		select {
-		case watchError, received := <-watcher.Error:
-			if !received {
-				return
-			}
-			log.Fatalf("watching error: %v", watchError)
-		case watchEvent, received := <-watcher.Event:
-			if !received {
-				return
-			}
-			if watchEvent.IsCreate() {
-				s.Chunks <- watchEvent.Name
-			}
-		case <-s.stopper.Stopping:
-			return
+func (s *Storer) finalizeChunk(chunk *WriteChunk) (bool, string, *WriteChunk) {
+	if !chunk.IsEmpty {
+		err := chunk.Finalize(s.storageDir)
+		if err != nil {
+			s.logger.Errorf("cannot finalize chunk: %v", err)
+			return false, "", nil
 		}
+		newChunk, err := NewChunk(s.tmpDir)
+		if err != nil {
+			s.logger.Errorf("cannot create new chunk: %v", err)
+			return false, "", nil
+		}
+		return true, chunk.name(), newChunk
 	}
+	return true, "", chunk
 }

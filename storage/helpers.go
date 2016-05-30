@@ -4,6 +4,7 @@ import (
 	"os"
 	"github.com/pkg/errors"
 	"sync"
+	"io/ioutil"
 )
 
 // Filesystem helpers
@@ -18,6 +19,19 @@ func EnsureDirs(paths ...string) error {
 		}
 	}
 	return nil
+}
+
+func GetFiles(path string) ([]string, error) {
+	files, err := ioutil.ReadDir(path)
+	if err != nil {
+		return nil, errors.Wrapf(err, "cannot read file list in '%s'", path)
+	}
+
+	fileNames := make([]string, 0)
+	for _, file := range files {
+		fileNames = append(fileNames, file.Name())
+	}
+	return fileNames, nil
 }
 
 //

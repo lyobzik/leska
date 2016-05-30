@@ -19,6 +19,7 @@ type Data interface {
 // Chunk to write data.
 type WriteChunk struct {
 	file    *os.File
+	closed bool
 	IsEmpty bool
 }
 
@@ -28,7 +29,7 @@ func NewChunk(path string) (*WriteChunk, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "cannot create chunk '%s'", prefix)
 	}
-	return &WriteChunk{file: file, IsEmpty: true}, nil
+	return &WriteChunk{file: file, closed: false, IsEmpty: true}, nil
 }
 
 func (c *WriteChunk) Store(data Data) error {
@@ -40,6 +41,12 @@ func (c *WriteChunk) Store(data Data) error {
 }
 
 func (c *WriteChunk) Finalize(path string) error {
+	// TODO: по-хорошему лучше это вынесте в repeateLoop, но там это кажется будет выглядеть кривовато.
+	if c.closed {
+		return nil
+	}
+
+	c.closed = true
 	if err := c.file.Close(); err != nil {
 		return errors.Wrapf(err, "cannot close chunk '%s'", c.name())
 	}
