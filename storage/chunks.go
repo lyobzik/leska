@@ -1,13 +1,14 @@
 package storage
 
 import (
+	"bufio"
 	"fmt"
 	"github.com/pkg/errors"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"time"
-	"io"
 )
 
 // Chunk data.
@@ -19,7 +20,7 @@ type Data interface {
 // Chunk to write data.
 type WriteChunk struct {
 	file    *os.File
-	closed bool
+	closed  bool
 	IsEmpty bool
 }
 
@@ -34,35 +35,43 @@ func NewChunk(path string) (*WriteChunk, error) {
 
 func (c *WriteChunk) Store(data Data) error {
 	if err := data.Save(c.file); err != nil {
-		return errors.Wrapf(err, "cannot save data to chunk '%s'", c.name())
+		return errors.Wrapf(err, "cannot save data to chunk '%s'", c.Path())
 	}
 	c.IsEmpty = false
 	return nil
 }
 
-func (c *WriteChunk) Finalize(path string) error {
+func (c *WriteChunk) Finalize(path string) (string, error) {
 	// TODO: по-хорошему лучше это вынесте в repeateLoop, но там это кажется будет выглядеть кривовато.
 	if c.closed {
-		return nil
+		return "", nil
 	}
 
 	c.closed = true
 	if err := c.file.Close(); err != nil {
-		return errors.Wrapf(err, "cannot close chunk '%s'", c.name())
+		return "", errors.Wrapf(err, "cannot close chunk '%s'", c.Path())
 	}
-	if err := os.Rename(c.file.Name(), filepath.Join(path, c.name())); err != nil {
-		return errors.Wrapf(err, "cannot move chunk '%s' to storage '%s'", c.name(), path)
+	if err := os.Rename(c.Path(), filepath.Join(path, c.Name())); err != nil {
+		return "", errors.Wrapf(err, "cannot move chunk '%s' to storage '%s'", c.Path(), path)
 	}
-	return nil
+	// TODO: нужно подумать что лучше отсюда возвращать имя файла или полный путь.
+	// Нужно чтобы это было согласованно с тем как получаются на старте список finalizedChunks
+	return c.Name(), nil
 }
 
-func (c *WriteChunk) name() string {
+func (c *WriteChunk) Name() string {
+	return filepath.Base(c.Path())
+}
+
+func (c *WriteChunk) Path() string {
 	return c.file.Name()
 }
 
 // Chunk to read data.
 type ReadChunk struct {
-	file *os.File
+	// TODO: кажется можно обойтись без поля file, а Reader встроить.
+	file   *os.File
+	Reader *bufio.Reader
 }
 
 func LoadChunk(path string) (*ReadChunk, error) {
@@ -70,15 +79,11 @@ func LoadChunk(path string) (*ReadChunk, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "cannot open chunk file")
 	}
-	return &ReadChunk{file: file}, nil
+	return &ReadChunk{file: file, Reader: bufio.NewReader(file)}, nil
 }
 
 func (c *ReadChunk) Name() string {
 	return c.file.Name()
-}
-
-func (c *ReadChunk) Reader() io.Reader {
-	return c.file
 }
 
 func (c *ReadChunk) Close() {

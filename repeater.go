@@ -1,9 +1,9 @@
 package main
 
 import (
+	"github.com/lyobzik/leska/storage"
 	"github.com/op/go-logging"
 	"github.com/pkg/errors"
-	"github.com/lyobzik/leska/storage"
 	"net/http"
 	"sync"
 )
@@ -69,6 +69,7 @@ func (r *Repeater) repeateLoop() {
 }
 
 func (r *Repeater) repeateChunk(chunkName string) {
+	r.logger.Infof("repeate chunk %s", chunkName)
 	chunk, err := r.storer.LoadChunk(chunkName)
 	if err != nil {
 		r.logger.Errorf("cannot load chunk from '%s': %v", chunkName, err)
@@ -76,14 +77,17 @@ func (r *Repeater) repeateChunk(chunkName string) {
 	}
 	defer chunk.Close()
 
-	for r.repeateChunkRequest(chunk) {}
+	for r.repeateChunkRequest(chunk) {
+	}
 }
 
 func (r *Repeater) repeateChunkRequest(chunk *storage.ReadChunk) bool {
-	if request, err := LoadRequest(chunk.Reader(), 1024*1024); err == nil {
+	r.logger.Infof("repeate request from chunk: %v", chunk)
+	if request, err := LoadRequest(chunk.Reader, 1024*1024); err == nil {
 		defer request.Close()
 		r.repeateRequest(request)
 	} else if IsEndOfFileError(err) {
+		r.logger.Errorf("read end of chunk: %v", err)
 		return false
 	} else if err != nil {
 		r.logger.Errorf("cannot load request from chunk '%s': %v", chunk.Name(), err)
@@ -102,5 +106,7 @@ func (r *Repeater) repeateRequest(request *Request) {
 	if response.IsFailed() {
 		r.logger.Errorf("cannot repeate request: %v", request)
 		r.Add(request)
+	} else {
+		r.logger.Infof("repeate successfull: %v - %v", request, response)
 	}
 }

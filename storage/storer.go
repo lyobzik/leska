@@ -60,6 +60,7 @@ func (s *Storer) storeLoop() {
 		s.logger.Errorf("cannot read inialized chunk list: %v", err)
 		return
 	}
+	s.logger.Infof("finalized chunks on startup: %v", finalizedChunks)
 
 	currentChunk, err := NewChunk(s.tmpDir)
 	// TODO: нужно закрывать currentChunk, но при этом не закрывать его дважды. То есть простой defer не поможет.
@@ -68,12 +69,12 @@ func (s *Storer) storeLoop() {
 		return
 	}
 	defer func() {
-		currentChunk.Finalize(s.storageDir)
+		s.finalizeChunk(currentChunk)
 	}()
 	// TODO: нужно задавать время жизни чанка в конфиге
 	timer := time.Tick(5 * time.Second)
 
-	mayRun := false
+	mayRun := true
 	for mayRun {
 		if len(finalizedChunks) == 0 {
 			select {
@@ -82,7 +83,7 @@ func (s *Storer) storeLoop() {
 			case <-timer:
 				var name string
 				mayRun, name, currentChunk = s.finalizeChunk(currentChunk)
-				if mayRun && len(name) == 0 {
+				if mayRun && len(name) != 0 {
 					finalizedChunks = append(finalizedChunks, name)
 				}
 			}
@@ -93,7 +94,7 @@ func (s *Storer) storeLoop() {
 			case <-timer:
 				var name string
 				mayRun, name, currentChunk = s.finalizeChunk(currentChunk)
-				if mayRun && len(name) == 0 {
+				if mayRun && len(name) != 0 {
 					finalizedChunks = append(finalizedChunks, name)
 				}
 			case s.Chunks <- finalizedChunks[0]:
@@ -114,7 +115,8 @@ func (s *Storer) handleData(chunk *WriteChunk, data Data, received bool) bool {
 
 func (s *Storer) finalizeChunk(chunk *WriteChunk) (bool, string, *WriteChunk) {
 	if !chunk.IsEmpty {
-		err := chunk.Finalize(s.storageDir)
+		finalizedPath, err := chunk.Finalize(s.storageDir)
+		s.logger.Infof("finializeChunk %v: %s", chunk, finalizedPath)
 		if err != nil {
 			s.logger.Errorf("cannot finalize chunk: %v", err)
 			return false, "", nil
@@ -124,7 +126,7 @@ func (s *Storer) finalizeChunk(chunk *WriteChunk) (bool, string, *WriteChunk) {
 			s.logger.Errorf("cannot create new chunk: %v", err)
 			return false, "", nil
 		}
-		return true, chunk.name(), newChunk
+		return true, finalizedPath, newChunk
 	}
 	return true, "", chunk
 }

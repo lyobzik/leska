@@ -34,8 +34,8 @@ func NewRequest(inRequest *http.Request, memoryBufferSize int64, maxSize int64) 
 	return request, nil
 }
 
-func LoadRequest(file io.Reader, memoryBufferSize int64) (*Request, error) {
-	request, err := http.ReadRequest(bufio.NewReader(file))
+func LoadRequest(reader *bufio.Reader, memoryBufferSize int64) (*Request, error) {
+	request, err := http.ReadRequest(reader)
 	if err != nil {
 		return nil, errors.Wrap(err, "cannot load request")
 	}
