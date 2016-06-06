@@ -47,8 +47,21 @@ func (r *Repeater) Stop() {
 	r.storer.Stop()
 }
 
+func (r *Repeater) AddWithTTL(request *Request, ttl int32) {
+	record := storage.NewRecord(request)
+	record.TTL = ttl
+	r.storer.Add(record)
+}
+
 func (r *Repeater) Add(request *Request) {
-	r.storer.Add(request)
+	record := storage.NewRecord(request)
+	record.TTL = 4 //TODO: выставлять в значение из конфига
+	r.AddRecord(record)
+}
+
+func (r *Repeater) AddRecord(record *storage.Record) {
+	record.TTL -= 1
+	r.storer.Add(record)
 }
 
 func (r *Repeater) repeateLoop() {
@@ -83,9 +96,13 @@ func (r *Repeater) repeateChunk(chunkName string) {
 
 func (r *Repeater) repeateChunkRequest(chunk *storage.ReadChunk) bool {
 	r.logger.Infof("repeate request from chunk: %v", chunk)
-	if request, err := LoadRequest(chunk.Reader, 1024*1024); err == nil {
-		defer request.Close()
-		r.repeateRequest(request)
+	if record, err := chunk.GetNextRecordReader(); err == nil {
+		if request, err := LoadRequest(record.Reader, 1024*1024); err == nil {
+			defer request.Close()
+			r.repeateRequest(request, record.TTL - 1)
+		} else if err != nil {
+			r.logger.Errorf("cannot load request from chunk '%s': %v", chunk.Name(), err)
+		}
 	} else if IsEndOfFileError(err) {
 		r.logger.Errorf("read end of chunk: %v", err)
 		return false
@@ -95,7 +112,8 @@ func (r *Repeater) repeateChunkRequest(chunk *storage.ReadChunk) bool {
 	return true
 }
 
-func (r *Repeater) repeateRequest(request *Request) {
+func (r *Repeater) repeateRequest(request *Request, ttl int32) {
+
 	response, err := NewResponse()
 	if err != nil {
 		return
@@ -105,7 +123,7 @@ func (r *Repeater) repeateRequest(request *Request) {
 	r.handler.ServeHTTP(response, &request.httpRequest)
 	if response.IsFailed() {
 		r.logger.Errorf("cannot repeate request: %v", request)
-		r.Add(request)
+		r.AddWithTTL(request, ttl)
 	} else {
 		r.logger.Infof("repeate successfull: %v - %v", request, response)
 	}

@@ -108,7 +108,9 @@ func (s *Storer) handleData(chunk *WriteChunk, data Data, received bool) bool {
 	if !received {
 		return false
 	}
-	chunk.Store(data)
+	if err := chunk.Store(data); err != nil {
+		s.logger.Errorf("cannot store data to chunk: %v", err)
+	}
 	data.Close()
 	return true
 }
