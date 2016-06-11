@@ -9,20 +9,51 @@ import (
 	"github.com/vulcand/oxy/roundrobin"
 	"github.com/vulcand/oxy/utils"
 	"net/http"
-	"time"
 	"net/url"
+	"os"
+	"time"
 )
 
 type Config struct {
-	Upstreams []string `short:"u" long:"upstream" required:"true"`
-	Address   string   `short:"a" long:"address" required:"true"`
-	Storage   string   `short:"s" long:"storage" default:"./storage"`
+	Upstreams     []string      `short:"u" long:"upstream" required:"true" description:"group of servers of final destination"`
+	Address       string        `short:"a" long:"address" required:"true" description:"listen address of this server"`
+	Storage       string        `short:"s" long:"storage" default:"storage" description:"path to directory to store failed requests"`
+	RepeatTimeout time.Duration `short:"t" long:"repeat-timeout" default:"0s" description:"timeout between repeated tries"`
+	RepeatNumber  uint          `short:"n" long:"repeat-number" default:"1" description:"maximum number of tries"`
+	Verbose       []bool        `short:"v" long:"verbose" description:"write detailed log"`
+	LogLevel      logging.Level `hidden:"true"`
 }
 
-func ParseArgs() (Config, error) {
+func ParseArgs() Config {
 	config := Config{}
-	_, err := flags.Parse(&config)
-	return config, err
+	parser := flags.NewParser(&config, flags.Default)
+	_, err := parser.Parse()
+	if err != nil {
+		if !isFlagsHelpError(err) {
+			parser.WriteHelp(os.Stderr)
+		}
+		os.Exit(1)
+	}
+	config.LogLevel = convertVerboseToLovLevel(config.Verbose)
+	return config
+}
+
+func isFlagsHelpError(err error) bool {
+	flagsError, converted := err.(*flags.Error)
+	return converted && flagsError.Type == flags.ErrHelp
+}
+
+func convertVerboseToLovLevel(verbose []bool) logging.Level {
+	for _, value := range verbose {
+		if !value {
+			return logging.ERROR
+		}
+	}
+	logLevel := logging.ERROR + logging.Level(len(verbose))
+	if logging.DEBUG < logLevel {
+		return logging.DEBUG
+	}
+	return logLevel
 }
 
 func CreateForwarder(logger *logging.Logger, upstreams []string) (http.Handler, error) {
@@ -55,16 +86,17 @@ func main() {
 	//go RunTestServer(":8089")
 	//go RunTestServer(":8090")
 
-	config, err := ParseArgs()
-	// TODO: возможно нужно в этом случае выводить usage.
-	HandleErrorWithoutLogger("cannot parse arguments", err)
+	config := ParseArgs()
 
-	logger, err := CreateLogger(logging.INFO, "leska")
+	logger, err := CreateLogger(config.LogLevel, "leska")
 	HandleErrorWithoutLogger("cannot create logger", err)
+	logger.Debugf("start leska with config: %v", config)
 
+	// TODO: прокинуть Repeate-настроки куда нужно
 	forwarder, err := CreateForwarder(logger, config.Upstreams)
 	HandleError(logger, "cannot create forwarder", err)
 
+	// TODO: вынести storer из Repeater'а
 	repeater, err := NewRepeater(logger, forwarder, config.Storage)
 	HandleError(logger, "cannot create repeater", err)
 	defer repeater.Stop()
