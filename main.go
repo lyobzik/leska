@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/facebookgo/httpdown"
 	"github.com/jessevdk/go-flags"
+	"github.com/lyobzik/leska/storage"
 	"github.com/op/go-logging"
 	"github.com/pkg/errors"
 	"github.com/vulcand/oxy/forward"
@@ -12,7 +13,6 @@ import (
 	"net/url"
 	"os"
 	"time"
-	"github.com/lyobzik/leska/storage"
 )
 
 type Config struct {
@@ -20,7 +20,7 @@ type Config struct {
 	Address       string        `short:"a" long:"address" required:"true" description:"listen address of this server"`
 	Storage       string        `short:"s" long:"storage" default:"storage" description:"path to directory to store failed requests"`
 	RepeatTimeout time.Duration `short:"t" long:"repeat-timeout" default:"0s" description:"timeout between repeated tries"`
-	RepeatNumber  uint          `short:"n" long:"repeat-number" default:"1" description:"maximum number of tries"`
+	RepeatNumber  int32         `short:"n" long:"repeat-number" default:"1" description:"maximum number of tries"`
 	Verbose       []bool        `short:"v" long:"verbose" description:"write detailed log"`
 	LogLevel      logging.Level `hidden:"true"`
 }
@@ -101,7 +101,8 @@ func main() {
 	HandleError(logger, "cannot create storer", err)
 	defer storer.Stop()
 
-	repeater, err := StartRepeater(logger, forwarder, storer)
+	repeater, err := StartRepeater(logger, forwarder, storer,
+		config.RepeatTimeout, config.RepeatNumber)
 	HandleError(logger, "cannot create repeater", err)
 	defer repeater.Stop()
 

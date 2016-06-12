@@ -22,6 +22,8 @@ type Data interface {
 
 type RecordHeader struct {
 	TTL  int32
+	// TODO: доделать использование времени последней попытки
+	LastTry time.Time
 	Size uint64
 }
 

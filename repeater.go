@@ -5,27 +5,36 @@ import (
 	"github.com/op/go-logging"
 	"net/http"
 	"sync"
+	"time"
 )
 
 type Repeater struct {
-	logger   *logging.Logger
-	handler  http.Handler
-	storer   *storage.Storer
-	waitDone sync.WaitGroup
-	stopping chan struct{}
+	logger        *logging.Logger
+	handler       http.Handler
+	storer        *storage.Storer
+	repeatTimeout time.Duration
+	repeatNumber  int32
+	waitDone      sync.WaitGroup
+	stopping      chan struct{}
 }
 
-func NewRepeater(logger *logging.Logger, handler http.Handler, storer *storage.Storer) (*Repeater, error) {
+func NewRepeater(logger *logging.Logger, handler http.Handler, storer *storage.Storer,
+	repeatTimeout time.Duration, repeatNumber int32) (*Repeater, error) {
+
 	return &Repeater{
-		logger:   logger,
-		handler:  handler,
-		storer:   storer,
-		stopping: make(chan struct{}, 1),
+		logger:        logger,
+		handler:       handler,
+		storer:        storer,
+		repeatTimeout: repeatTimeout,
+		repeatNumber:  repeatNumber,
+		stopping:      make(chan struct{}, 1),
 	}, nil
 }
 
-func StartRepeater(logger *logging.Logger, handler http.Handler, storer *storage.Storer) (*Repeater, error) {
-	repeater, err := NewRepeater(logger, handler, storer)
+func StartRepeater(logger *logging.Logger, handler http.Handler, storer *storage.Storer,
+	repeatTimeout time.Duration, repeatNumber int32) (*Repeater, error) {
+
+	repeater, err := NewRepeater(logger, handler, storer, repeatTimeout, repeatNumber)
 	if err == nil {
 		repeater.Start()
 	}
@@ -50,7 +59,7 @@ func (r *Repeater) AddWithTTL(request *Request, ttl int32) {
 
 func (r *Repeater) Add(request *Request) {
 	record := storage.NewRecord(request)
-	record.TTL = 4 //TODO: выставлять в значение из конфига
+	record.TTL = r.repeatNumber
 	r.AddRecord(record)
 }
 
@@ -94,7 +103,7 @@ func (r *Repeater) repeateChunkRequest(chunk *storage.ReadChunk) bool {
 	if record, err := chunk.GetNextRecordReader(); err == nil {
 		if request, err := LoadRequest(record.Reader, 1024*1024); err == nil {
 			defer request.Close()
-			r.repeateRequest(request, record.TTL - 1)
+			r.repeateRequest(request, record.TTL-1)
 		} else if err != nil {
 			r.logger.Errorf("cannot load request from chunk '%s': %v", chunk.Name(), err)
 		}
