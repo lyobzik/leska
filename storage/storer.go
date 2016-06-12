@@ -33,6 +33,14 @@ func NewStorer(logger *logging.Logger, storage string) (*Storer, error) {
 	}, nil
 }
 
+func StartStorer(logger *logging.Logger, storage string) (*Storer, error) {
+	storer, err := NewStorer(logger, storage)
+	if err == nil {
+		storer.Spawn()
+	}
+	return storer, err
+}
+
 func (s *Storer) Add(data Data) {
 	s.data <- data
 }

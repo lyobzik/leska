@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"time"
+	"github.com/lyobzik/leska/storage"
 )
 
 type Config struct {
@@ -96,8 +97,11 @@ func main() {
 	forwarder, err := CreateForwarder(logger, config.Upstreams)
 	HandleError(logger, "cannot create forwarder", err)
 
-	// TODO: вынести storer из Repeater'а
-	repeater, err := NewRepeater(logger, forwarder, config.Storage)
+	storer, err := storage.StartStorer(logger, config.Storage)
+	HandleError(logger, "cannot create storer", err)
+	defer storer.Stop()
+
+	repeater, err := StartRepeater(logger, forwarder, storer)
 	HandleError(logger, "cannot create repeater", err)
 	defer repeater.Stop()
 

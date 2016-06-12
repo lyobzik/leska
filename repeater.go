@@ -3,7 +3,6 @@ package main
 import (
 	"github.com/lyobzik/leska/storage"
 	"github.com/op/go-logging"
-	"github.com/pkg/errors"
 	"net/http"
 	"sync"
 )
@@ -16,26 +15,24 @@ type Repeater struct {
 	stopping chan struct{}
 }
 
-func NewRepeater(logger *logging.Logger, handler http.Handler, path string) (*Repeater, error) {
-	storer, err := storage.NewStorer(logger, path)
-	if err != nil {
-		return nil, errors.Wrap(err, "cannot create storer")
-	}
-
-	repeater := &Repeater{
+func NewRepeater(logger *logging.Logger, handler http.Handler, storer *storage.Storer) (*Repeater, error) {
+	return &Repeater{
 		logger:   logger,
 		handler:  handler,
 		storer:   storer,
 		stopping: make(chan struct{}, 1),
-	}
-	repeater.Start()
+	}, nil
+}
 
-	return repeater, nil
+func StartRepeater(logger *logging.Logger, handler http.Handler, storer *storage.Storer) (*Repeater, error) {
+	repeater, err := NewRepeater(logger, handler, storer)
+	if err == nil {
+		repeater.Start()
+	}
+	return repeater, err
 }
 
 func (r *Repeater) Start() {
-	r.storer.Spawn()
-
 	r.waitDone.Add(1)
 	go r.repeateLoop()
 }
@@ -43,8 +40,6 @@ func (r *Repeater) Start() {
 func (r *Repeater) Stop() {
 	close(r.stopping)
 	r.waitDone.Wait()
-
-	r.storer.Stop()
 }
 
 func (r *Repeater) AddWithTTL(request *Request, ttl int32) {
