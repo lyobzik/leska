@@ -1,12 +1,11 @@
 package main
 
 import (
-	"os"
 	"github.com/op/go-logging"
 	"github.com/pkg/errors"
-	"log"
 	"io"
-	"sync"
+	"log"
+	"os"
 )
 
 // Filesystem helpers
@@ -43,35 +42,6 @@ func TryCloseOnFail(success bool, closable TryClosable) error {
 		return closable.Close()
 	}
 	return nil
-}
-
-//
-type Stopper struct {
-	waitDone   sync.WaitGroup
-	Stopping   chan struct{}
-}
-
-func NewStopper() *Stopper {
-	return &Stopper{
-		waitDone: sync.WaitGroup{},
-		Stopping: make(chan struct{}, 1),
-	}
-}
-
-func (s *Stopper) Stop() {
-	close(s.Stopping)
-}
-
-func (s *Stopper) WaitDone() {
-	s.waitDone.Wait()
-}
-
-func (s *Stopper) Add() {
-	s.waitDone.Add(1)
-}
-
-func (s *Stopper) Done() {
-	s.waitDone.Done()
 }
 
 //

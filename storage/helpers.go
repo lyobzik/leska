@@ -1,10 +1,9 @@
 package storage
 
 import (
-	"os"
 	"github.com/pkg/errors"
-	"sync"
 	"io/ioutil"
+	"os"
 )
 
 // Filesystem helpers
@@ -32,33 +31,4 @@ func GetFiles(path string) ([]string, error) {
 		fileNames = append(fileNames, file.Name())
 	}
 	return fileNames, nil
-}
-
-//
-type Stopper struct {
-	waitDone   sync.WaitGroup
-	Stopping   chan struct{}
-}
-
-func NewStopper() *Stopper {
-	return &Stopper{
-		waitDone: sync.WaitGroup{},
-		Stopping: make(chan struct{}, 1),
-	}
-}
-
-func (s *Stopper) Stop() {
-	close(s.Stopping)
-}
-
-func (s *Stopper) WaitDone() {
-	s.waitDone.Wait()
-}
-
-func (s *Stopper) Add() {
-	s.waitDone.Add(1)
-}
-
-func (s *Stopper) Done() {
-	s.waitDone.Done()
 }

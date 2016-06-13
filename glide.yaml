@@ -19,3 +19,6 @@ import:
   subpackages:
   - inotify
 - package: github.com/howeyc/fsnotify
+ignore:
+- github.com/lyobzik/leska
+- github.com/lyobzik/leska/storage

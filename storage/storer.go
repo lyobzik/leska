@@ -3,6 +3,7 @@ package storage
 import (
 	"github.com/op/go-logging"
 	"github.com/pkg/errors"
+	"github.com/lyobzik/go-utils"
 	"path"
 	"path/filepath"
 	"time"
@@ -14,7 +15,7 @@ type Storer struct {
 	tmpDir     string
 	data       chan Data
 	Chunks     chan string
-	stopper    *Stopper
+	stopper    *utils.Stopper
 }
 
 func NewStorer(logger *logging.Logger, storage string) (*Storer, error) {
@@ -29,7 +30,7 @@ func NewStorer(logger *logging.Logger, storage string) (*Storer, error) {
 		tmpDir:     tmpDir,
 		data:       make(chan Data, 100000),
 		Chunks:     make(chan string, 100000),
-		stopper:    NewStopper(),
+		stopper:    utils.NewStopper(),
 	}, nil
 }
 
