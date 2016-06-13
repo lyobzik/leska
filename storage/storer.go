@@ -21,7 +21,7 @@ type Storer struct {
 func NewStorer(logger *logging.Logger, storage string) (*Storer, error) {
 	storageDir := path.Join(storage, "storage")
 	tmpDir := path.Join(storage, "tmp")
-	if err := EnsureDirs(storageDir, tmpDir); err != nil {
+	if err := utils.EnsureDirs(storageDir, tmpDir); err != nil {
 		return nil, errors.Wrap(err, "cannot create storage directory")
 	}
 
@@ -64,7 +64,7 @@ func (s *Storer) Stop() {
 func (s *Storer) storeLoop() {
 	defer s.stopper.Done()
 
-	finalizedChunks, err := GetFiles(s.storageDir)
+	finalizedChunks, err := utils.GetFiles(s.storageDir)
 	if err != nil {
 		s.logger.Errorf("cannot read inialized chunk list: %v", err)
 		return

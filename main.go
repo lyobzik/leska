@@ -1,18 +1,15 @@
 package main
 
 import (
-	"github.com/facebookgo/httpdown"
-	"github.com/jessevdk/go-flags"
-	"github.com/lyobzik/leska/storage"
-	"github.com/op/go-logging"
-	"github.com/pkg/errors"
-	"github.com/vulcand/oxy/forward"
-	"github.com/vulcand/oxy/roundrobin"
-	"github.com/vulcand/oxy/utils"
 	"net/http"
-	"net/url"
 	"os"
 	"time"
+
+	"github.com/facebookgo/httpdown"
+	"github.com/jessevdk/go-flags"
+	"github.com/lyobzik/go-utils"
+	"github.com/lyobzik/leska/storage"
+	"github.com/op/go-logging"
 )
 
 type Config struct {
@@ -57,28 +54,6 @@ func convertVerboseToLovLevel(verbose []bool) logging.Level {
 	return logLevel
 }
 
-func CreateForwarder(logger *logging.Logger, upstreams []string) (http.Handler, error) {
-	forwarder, err := forward.New(forward.Logger(logger),
-		forward.ErrorHandler(utils.ErrorHandlerFunc(ErrorHandler)))
-	if err != nil {
-		return nil, errors.Wrapf(err, "cannot create forwarder")
-	}
-
-	loadBalancer, err := roundrobin.New(forwarder)
-	if err != nil {
-		return nil, errors.Wrapf(err, "cannot create load balancer")
-	}
-
-	for _, upstream := range upstreams {
-		upstreamUrl, err := url.Parse(upstream)
-		if err != nil {
-			return nil, errors.Wrapf(err, "cannot parse upstream address '%s'", upstream)
-		}
-		loadBalancer.UpsertServer(upstreamUrl)
-	}
-	return loadBalancer, nil
-}
-
 /////////////////////////////////////////////////
 // TODO: возможно в эту задачу хорошо подойдет fasthttp. Нужно будет посмотреть
 // TODO: на сколько все станет сложнее.
@@ -90,20 +65,20 @@ func main() {
 	config := ParseArgs()
 
 	logger, err := CreateLogger(config.LogLevel, "leska")
-	HandleErrorWithoutLogger("cannot create logger", err)
+	utils.HandleErrorWithoutLogger("cannot create logger", err)
 	logger.Debugf("start leska with config: %v", config)
 
 	// TODO: прокинуть Repeate-настроки куда нужно
 	forwarder, err := CreateForwarder(logger, config.Upstreams)
-	HandleError(logger, "cannot create forwarder", err)
+	utils.HandleError(logger, "cannot create forwarder", err)
 
 	storer, err := storage.StartStorer(logger, config.Storage)
-	HandleError(logger, "cannot create storer", err)
+	utils.HandleError(logger, "cannot create storer", err)
 	defer storer.Stop()
 
 	repeater, err := StartRepeater(logger, forwarder, storer,
 		config.RepeatTimeout, config.RepeatNumber)
-	HandleError(logger, "cannot create repeater", err)
+	utils.HandleError(logger, "cannot create repeater", err)
 	defer repeater.Stop()
 
 	streamer := NewStreamer(logger, repeater, forwarder)
@@ -117,5 +92,5 @@ func main() {
 			StopTimeout: 10 * time.Second,
 			KillTimeout: 1 * time.Second,
 		})
-	HandleError(logger, "cannot start server", err)
+	utils.HandleError(logger, "cannot start server", err)
 }

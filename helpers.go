@@ -1,65 +1,16 @@
 package main
 
 import (
+	"net/http"
+	"net/url"
+	"os"
+
 	"github.com/op/go-logging"
 	"github.com/pkg/errors"
-	"io"
-	"log"
-	"os"
+	"github.com/vulcand/oxy/forward"
+	"github.com/vulcand/oxy/roundrobin"
+	"github.com/vulcand/oxy/utils"
 )
-
-// Filesystem helpers
-func EnsureDir(path string) error {
-	return os.MkdirAll(path, os.ModeDir|0777)
-}
-
-func EnsureDirs(paths ...string) error {
-	for _, path := range paths {
-		if err := EnsureDir(path); err != nil {
-			return errors.Wrapf(err, "cannot create directory '%s'", path)
-		}
-	}
-	return nil
-}
-
-// Close helpers
-type Closable interface {
-	Close()
-}
-
-func CloseOnFail(success bool, closable Closable) {
-	if !success {
-		closable.Close()
-	}
-}
-
-type TryClosable interface {
-	Close() error
-}
-
-func TryCloseOnFail(success bool, closable TryClosable) error {
-	if !success {
-		return closable.Close()
-	}
-	return nil
-}
-
-//
-func IsEndOfFileError(err error) bool {
-	return errors.Cause(err) == io.EOF
-}
-
-func HandleErrorWithoutLogger(message string, err error) {
-	if err != nil {
-		log.Fatalf("%s: %v\n", message, err)
-	}
-}
-
-func HandleError(logger *logging.Logger, message string, err error) {
-	if err != nil {
-		logger.Fatalf("%s: %v\n", message, err)
-	}
-}
 
 func CreateLogger(level logging.Level, prefix string) (*logging.Logger, error) {
 	logger, err := logging.GetLogger(prefix)
@@ -78,4 +29,26 @@ func CreateLogger(level logging.Level, prefix string) (*logging.Logger, error) {
 
 	logger.SetBackend(leveledBackend)
 	return logger, nil
+}
+
+func CreateForwarder(logger *logging.Logger, upstreams []string) (http.Handler, error) {
+	forwarder, err := forward.New(forward.Logger(logger),
+		forward.ErrorHandler(utils.ErrorHandlerFunc(ErrorHandler)))
+	if err != nil {
+		return nil, errors.Wrapf(err, "cannot create forwarder")
+	}
+
+	loadBalancer, err := roundrobin.New(forwarder)
+	if err != nil {
+		return nil, errors.Wrapf(err, "cannot create load balancer")
+	}
+
+	for _, upstream := range upstreams {
+		upstreamUrl, err := url.Parse(upstream)
+		if err != nil {
+			return nil, errors.Wrapf(err, "cannot parse upstream address '%s'", upstream)
+		}
+		loadBalancer.UpsertServer(upstreamUrl)
+	}
+	return loadBalancer, nil
 }

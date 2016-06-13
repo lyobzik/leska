@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sync"
 	"time"
+	"github.com/lyobzik/go-utils"
 )
 
 type Repeater struct {
@@ -107,7 +108,7 @@ func (r *Repeater) repeateChunkRequest(chunk *storage.ReadChunk) bool {
 		} else if err != nil {
 			r.logger.Errorf("cannot load request from chunk '%s': %v", chunk.Name(), err)
 		}
-	} else if IsEndOfFileError(err) {
+	} else if utils.IsEndOfFileError(err) {
 		r.logger.Errorf("read end of chunk: %v", err)
 		return false
 	} else if err != nil {

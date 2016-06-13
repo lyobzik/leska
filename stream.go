@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/lyobzik/go-utils"
 	"github.com/op/go-logging"
 	"github.com/pkg/errors"
 	"net/http"
@@ -30,7 +31,7 @@ func (s *Streamer) ServeHTTP(inResponse http.ResponseWriter, inRequest *http.Req
 
 	repeateRequest := false
 	defer func() {
-		CloseOnFail(repeateRequest, request)
+		utils.CloseOnFail(repeateRequest, request)
 		response.Close()
 	}()
 
@@ -49,14 +50,14 @@ func (s *Streamer) ServeHTTP(inResponse http.ResponseWriter, inRequest *http.Req
 }
 
 func (s *Streamer) copyRequestResponse(inRequest *http.Request) (*Request, *Response, error) {
-	request, err := NewRequest(inRequest, 1024 * 1024, 1024 * 1024)
+	request, err := NewRequest(inRequest, 1024*1024, 1024*1024)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "cannot copy request")
 	}
 
 	success := false
 	defer func() {
-		CloseOnFail(success, request)
+		utils.CloseOnFail(success, request)
 	}()
 
 	response, err := NewResponse()
