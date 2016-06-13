@@ -1,12 +1,12 @@
 package main
 
 import (
+	"net/http"
+	"time"
+
+	"github.com/lyobzik/go-utils"
 	"github.com/lyobzik/leska/storage"
 	"github.com/op/go-logging"
-	"net/http"
-	"sync"
-	"time"
-	"github.com/lyobzik/go-utils"
 )
 
 type Repeater struct {
@@ -15,8 +15,7 @@ type Repeater struct {
 	storer        *storage.Storer
 	repeatTimeout time.Duration
 	repeatNumber  int32
-	waitDone      sync.WaitGroup
-	stopping      chan struct{}
+	stopper       *utils.Stopper
 }
 
 func NewRepeater(logger *logging.Logger, handler http.Handler, storer *storage.Storer,
@@ -28,7 +27,7 @@ func NewRepeater(logger *logging.Logger, handler http.Handler, storer *storage.S
 		storer:        storer,
 		repeatTimeout: repeatTimeout,
 		repeatNumber:  repeatNumber,
-		stopping:      make(chan struct{}, 1),
+		stopper:       utils.NewStopper(),
 	}, nil
 }
 
@@ -43,13 +42,13 @@ func StartRepeater(logger *logging.Logger, handler http.Handler, storer *storage
 }
 
 func (r *Repeater) Start() {
-	r.waitDone.Add(1)
+	r.stopper.Add()
 	go r.repeateLoop()
 }
 
 func (r *Repeater) Stop() {
-	close(r.stopping)
-	r.waitDone.Wait()
+	r.stopper.Stop()
+	r.stopper.WaitDone()
 }
 
 func (r *Repeater) AddWithTTL(request *Request, ttl int32) {
@@ -70,11 +69,11 @@ func (r *Repeater) AddRecord(record *storage.Record) {
 }
 
 func (r *Repeater) repeateLoop() {
-	defer r.waitDone.Done()
+	defer r.stopper.Done()
 
 	for {
 		select {
-		case <-r.stopping:
+		case <-r.stopper.Stopping:
 			r.logger.Info("receive stopping signal")
 			return
 		case chunk, received := <-r.storer.Chunks:

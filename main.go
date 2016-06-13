@@ -81,12 +81,10 @@ func main() {
 	utils.HandleError(logger, "cannot create repeater", err)
 	defer repeater.Stop()
 
-	streamer := NewStreamer(logger, repeater, forwarder)
-
 	err = httpdown.ListenAndServe(
 		&http.Server{
 			Addr:    config.Address,
-			Handler: streamer,
+			Handler: NewStreamer(logger, repeater, forwarder),
 		},
 		&httpdown.HTTP{
 			StopTimeout: 10 * time.Second,
