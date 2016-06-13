@@ -9,7 +9,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/vulcand/oxy/forward"
 	"github.com/vulcand/oxy/roundrobin"
-	"github.com/vulcand/oxy/utils"
 )
 
 func CreateLogger(level logging.Level, prefix string) (*logging.Logger, error) {
@@ -32,8 +31,7 @@ func CreateLogger(level logging.Level, prefix string) (*logging.Logger, error) {
 }
 
 func CreateForwarder(logger *logging.Logger, upstreams []string) (http.Handler, error) {
-	forwarder, err := forward.New(forward.Logger(logger),
-		forward.ErrorHandler(utils.ErrorHandlerFunc(ErrorHandler)))
+	forwarder, err := forward.New(forward.Logger(logger))
 	if err != nil {
 		return nil, errors.Wrapf(err, "cannot create forwarder")
 	}
