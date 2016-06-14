@@ -1,13 +1,20 @@
 package storage
 
 import (
-	"github.com/op/go-logging"
-	"github.com/pkg/errors"
-	"github.com/lyobzik/go-utils"
+	"io"
 	"path"
 	"path/filepath"
 	"time"
+
+	"github.com/lyobzik/go-utils"
+	"github.com/op/go-logging"
+	"github.com/pkg/errors"
 )
+
+type Data interface {
+	Close()
+	Save(io.Writer) error
+}
 
 type Storer struct {
 	logger     *logging.Logger
