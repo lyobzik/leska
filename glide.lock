@@ -1,8 +1,10 @@
 hash: 07bf2dfa517fee11a764884119a1fc4f9681e9aed5afcc02600403feda9edc2e
-updated: 2016-06-13T15:21:19.502164707+06:00
+updated: 2016-06-17T20:53:53.537038471+06:00
 imports:
 - name: github.com/codahale/hdrhistogram
   version: f8ad88b59a584afeee9d334eff879b104439117b
+- name: github.com/edsrzf/mmap-go
+  version: 935e0e8a636ca4ba70b713f3e38a19e1b77739e8
 - name: github.com/facebookgo/clock
   version: 600d898af40aa09a7a93ecb9265d87b0504b6f03
 - name: github.com/facebookgo/httpdown
@@ -14,7 +16,7 @@ imports:
 - name: github.com/jessevdk/go-flags
   version: b9b882a3990882b05e02765f5df2cd3ad02874ee
 - name: github.com/lyobzik/go-utils
-  version: 6e38aedf6ade1f77765048b40a8bae0366ac811b
+  version: 537f0e249ce81fc460be921162f5abebebbafd67
 - name: github.com/lyobzik/leska
   version: ""
   subpackages:
@@ -30,7 +32,7 @@ imports:
 - name: github.com/op/go-logging
   version: 970db520ece77730c7e4724c61121037378659d9
 - name: github.com/pkg/errors
-  version: 01fa4104b9c248c8945d14d9f128454d5b28d595
+  version: 494e70f7620561491c2ca11e185bbef4b70060da
 - name: github.com/vulcand/oxy
   version: 11677428db34c4a05354d66d028174d0e3c6e905
   subpackages:
@@ -42,7 +44,7 @@ imports:
 - name: github.com/vulcand/predicate
   version: cb0bff91a7ab7cf7571e661ff883fc997bc554a3
 - name: golang.org/x/exp
-  version: 5295bc952743deac9199eded5c17b4fd3c2b82f3
+  version: c8ad82d60ab066b6bfd9c67cca031620a7fb11d5
   subpackages:
   - inotify
 - name: gopkg.in/mgo.v2

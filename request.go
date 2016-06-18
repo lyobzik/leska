@@ -46,12 +46,12 @@ func (r *Request) Close() {
 	r.buffer.Close()
 }
 
-func (r *Request) Save(file io.Writer) error {
+func (r *Request) Save(file io.Writer) (int, error) {
 	err := r.httpRequest.Write(file)
 	if err == nil {
 		_, err = r.buffer.WriteTo(file)
 	}
-	return err
+	return 0, err
 }
 
 func (r *Request) copyRequest(req *http.Request) {

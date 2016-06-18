@@ -2,22 +2,23 @@ package main
 
 import (
 	"github.com/lyobzik/go-utils"
+	"github.com/lyobzik/leska/storage"
 	"github.com/op/go-logging"
 	"github.com/pkg/errors"
 	"net/http"
 )
 
 type Streamer struct {
-	logger   *logging.Logger
-	handler  http.Handler
-	repeater *Repeater
+	logger  *logging.Logger
+	storer  *storage.Storer
+	handler http.Handler
 }
 
-func NewStreamer(logger *logging.Logger, repeater *Repeater, handler http.Handler) *Streamer {
+func NewStreamer(logger *logging.Logger, storer *storage.Storer, handler http.Handler) *Streamer {
 	return &Streamer{
-		logger:   logger,
-		handler:  handler,
-		repeater: repeater,
+		logger:  logger,
+		storer:  storer,
+		handler: handler,
 	}
 }
 
@@ -39,7 +40,7 @@ func (s *Streamer) ServeHTTP(inResponse http.ResponseWriter, inRequest *http.Req
 
 	if response.IsFailed() {
 		s.writeResponse(inResponse, http.StatusAccepted)
-		s.repeater.Add(request)
+		s.storer.Add(request)
 		repeateRequest = true
 		return
 	}
