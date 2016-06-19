@@ -165,6 +165,5 @@ func TestCreateIndexAndAppendRecrods(t *testing.T) {
 				"Incorrect index record [%d]", i)
 		}
 		closeIndexAndIndexFile(t, index, indexFile)
-
 	})
 }

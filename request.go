@@ -2,12 +2,14 @@ package main
 
 import (
 	"bufio"
-	"github.com/mailgun/multibuf"
-	"github.com/pkg/errors"
-	"github.com/vulcand/oxy/utils"
+	"bytes"
 	"io"
 	"io/ioutil"
 	"net/http"
+
+	"github.com/mailgun/multibuf"
+	"github.com/pkg/errors"
+	"github.com/vulcand/oxy/utils"
 )
 
 const (
@@ -47,11 +49,16 @@ func (r *Request) Close() {
 }
 
 func (r *Request) Save(file io.Writer) (int, error) {
-	err := r.httpRequest.Write(file)
-	if err == nil {
-		_, err = r.buffer.WriteTo(file)
+	buffer := bytes.NewBuffer([]byte{})
+
+	if err := r.httpRequest.Write(buffer); err != nil {
+		return 0, err
 	}
-	return 0, err
+	// TODO: проверять что успешно записан весь буфер.
+	if _, err := r.buffer.WriteTo(buffer); err != nil {
+		return 0, err
+	}
+	return file.Write(buffer.Bytes())
 }
 
 func (r *Request) copyRequest(req *http.Request) {

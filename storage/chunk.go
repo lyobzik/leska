@@ -11,9 +11,9 @@ import (
 )
 
 const (
-	indexSuffix  = ".index"
-	dataSuffix   = ".data"
-	tmpSuffix    = ".tmp"
+	indexSuffix = ".index"
+	dataSuffix  = ".data"
+	tmpSuffix   = ".tmp"
 )
 
 type Chunk struct {
@@ -31,7 +31,7 @@ func CreateChunk(storagePath string) (*Chunk, error) {
 		utils.TryCloseOnFail(success, indexFile)
 	}()
 
-	path := filepath.Join(storagePath, fmt.Sprintf("%d", time.Now().Unix()))
+	path := filepath.Join(storagePath, fmt.Sprintf("%d", time.Now().UnixNano()))
 	var err error
 	if indexFile, err = os.Create(GetTmpPath(GetIndexPath(path))); err != nil {
 		return nil, errors.Wrapf(err, "cannot create index file for chunk '%s'", path)

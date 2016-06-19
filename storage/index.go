@@ -103,7 +103,7 @@ func (index *Index) AppendRecord() (*IndexRecord, error) {
 	index.Header.ActiveCount += 1
 
 	index.recordsInfo.Len = int(index.Header.Length)
-	return &index.Records[index.Header.Length -1], nil
+	return &index.Records[index.Header.Length-1], nil
 }
 
 func (index *Index) Flush() error {
@@ -119,11 +119,6 @@ func (index *Index) Close() error {
 	if err := index.data.Unmap(); err != nil {
 		return errors.Wrapf(err, "cannot unmap file")
 	}
-	// TODO: подумать почему вообще мы открываем файл индекса снаружи и можем ли мы
-	// просто передать этот файл во владение индексу.
-	//if err := index.file.Close(); err != nil {
-	//	return errors.Wrapf(err, "cannot close file")
-	//}
 
 	return nil
 }

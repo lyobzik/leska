@@ -80,6 +80,11 @@ func (r *Repeater) repeateChunk(chunkName string) {
 	defer chunk.Close()
 
 	chunk.ForEachActiveRecord(r.repeatTimeout, r.repeateRecord)
+	if chunk.Index.Header.ActiveCount > 0 {
+		// TODO: исправить и перенести в select выше, так как Chunks
+		// может иметь ограниченный размер.
+		r.storer.Chunks <- chunk.Path
+	}
 }
 
 func (r *Repeater) repeateRecord(chunk *storage.Chunk, record storage.IndexRecord) bool {
@@ -92,7 +97,7 @@ func (r *Repeater) repeateRecord(chunk *storage.Chunk, record storage.IndexRecor
 	requestDataReader := bufio.NewReader(bytes.NewBuffer(requestData))
 	request, err := LoadRequest(requestDataReader, 1024*1024)
 	if err != nil {
-		r.logger.Error("cannot load request: %v", err)
+		r.logger.Errorf("cannot load request: %v", err)
 		return false
 	}
 	defer request.Close()

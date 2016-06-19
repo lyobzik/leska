@@ -2,6 +2,7 @@ package storage
 
 import (
 	"io"
+	"strings"
 	"time"
 
 	"github.com/lyobzik/go-utils"
@@ -21,32 +22,36 @@ type DataRecord struct {
 }
 
 type Storer struct {
-	logger       *logging.Logger
-	storage      string
-	repeatNumber int32
-	data         chan DataRecord
-	stopper      *utils.Stopper
-	Chunks       chan string
+	logger        *logging.Logger
+	storage       string
+	repeatNumber  int32
+	chunkLifetime time.Duration
+	data          chan DataRecord
+	stopper       *utils.Stopper
+	Chunks        chan string
 }
 
-func NewStorer(logger *logging.Logger, storage string, repeatNumber int32) (*Storer, error) {
+func NewStorer(logger *logging.Logger, storage string, repeatNumber int32,
+	chunkLifetime time.Duration, bufferSize int) (*Storer, error) {
+
 	if err := utils.EnsureDir(storage); err != nil {
 		return nil, errors.Wrap(err, "cannot create storage directory")
 	}
 
-	// TODO: барть значения из конфига
-	bufferSize := 10000
 	return &Storer{logger: logger,
-		storage:      storage,
-		repeatNumber: repeatNumber,
-		data:         make(chan DataRecord, bufferSize),
-		stopper:      utils.NewStopper(),
-		Chunks:       make(chan string, bufferSize),
+		storage:       storage,
+		repeatNumber:  repeatNumber,
+		chunkLifetime: chunkLifetime,
+		data:          make(chan DataRecord, bufferSize),
+		stopper:       utils.NewStopper(),
+		Chunks:        make(chan string, bufferSize),
 	}, nil
 }
 
-func StartStorer(logger *logging.Logger, storage string, repeatNumber int32) (*Storer, error) {
-	storer, err := NewStorer(logger, storage, repeatNumber)
+func StartStorer(logger *logging.Logger, storage string, repeatNumber int32,
+	chunkLifetime time.Duration, bufferSize int) (*Storer, error) {
+
+	storer, err := NewStorer(logger, storage, repeatNumber, chunkLifetime, bufferSize)
 	if err == nil {
 		storer.Spawn()
 	}
@@ -73,21 +78,21 @@ func (s *Storer) AddWithTTL(data Data, ttl int32) {
 }
 
 func (s *Storer) storeLoop() {
-	chunk := s.createChunk()
-	defer func() {
-		s.finalizeChunk(chunk)
-		s.stopper.Done()
-	}()
-
-	finalizedChunks, err := utils.GetFilteredFiles(s.storage, "*"+indexSuffix)
+	finalizedChunks, err := utils.GetFilteredFiles(s.storage,
+		".*"+strings.Replace(indexSuffix, ".", "\\.", -1))
 	if err != nil {
 		s.logger.Errorf("cannot read inialized chunk list: %v", err)
 		return
 	}
 	s.logger.Infof("finalized chunks on startup: %v", finalizedChunks)
 
-	// TODO: нужно брать значение из конфига
-	timer := time.Tick(5 * time.Second)
+	chunk := s.createChunk()
+	defer func() {
+		s.finalizeChunk(chunk)
+		s.stopper.Done()
+	}()
+
+	timer := time.Tick(s.chunkLifetime)
 
 	mayRun := true
 	for mayRun && chunk != nil {
@@ -96,7 +101,9 @@ func (s *Storer) storeLoop() {
 			case data, received := <-s.data:
 				mayRun = s.handleData(chunk, data, received)
 			case <-timer:
-				finalizedChunks = append(finalizedChunks, chunk.Path)
+				if chunk.Index.Header.ActiveCount > 0 {
+					finalizedChunks = append(finalizedChunks, chunk.Path)
+				}
 				chunk = s.recreateChunk(chunk)
 			}
 		} else {
@@ -104,7 +111,9 @@ func (s *Storer) storeLoop() {
 			case data, received := <-s.data:
 				mayRun = s.handleData(chunk, data, received)
 			case <-timer:
-				finalizedChunks = append(finalizedChunks, chunk.Path)
+				if chunk.Index.Header.ActiveCount > 0 {
+					finalizedChunks = append(finalizedChunks, chunk.Path)
+				}
 				chunk = s.recreateChunk(chunk)
 			case s.Chunks <- finalizedChunks[0]:
 				finalizedChunks = finalizedChunks[1:]
