@@ -1,5 +1,5 @@
 hash: 5a35698a428145df2cbcd09d111242b6869268f54f7d16aff9ab7f7a1eb657a5
-updated: 2016-06-19T15:14:14.953076144+06:00
+updated: 2016-06-19T15:47:56.304341596+06:00
 imports:
 - name: github.com/codahale/hdrhistogram
   version: f8ad88b59a584afeee9d334eff879b104439117b
@@ -14,7 +14,7 @@ imports:
 - name: github.com/jessevdk/go-flags
   version: b9b882a3990882b05e02765f5df2cd3ad02874ee
 - name: github.com/lyobzik/go-utils
-  version: 537f0e249ce81fc460be921162f5abebebbafd67
+  version: 5ca2ae1abcbf48ee904725efbd046683f11decdd
   subpackages:
   - storage
 - name: github.com/lyobzik/leska

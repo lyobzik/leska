@@ -16,12 +16,6 @@ const (
 	tmpSuffix    = ".tmp"
 )
 
-type ChunkHeader struct {
-	MagicNumber uint32
-	Version     uint32
-	Length      uint64
-}
-
 type Chunk struct {
 	Index     *Index
 	indexFile *os.File
@@ -29,7 +23,7 @@ type Chunk struct {
 	Path      string
 }
 
-func CreateChunk(path string) (*Chunk, error) {
+func CreateChunk(storagePath string) (*Chunk, error) {
 	var indexFile, dataFile *os.File
 	success := false
 	defer func() {
@@ -37,7 +31,7 @@ func CreateChunk(path string) (*Chunk, error) {
 		utils.TryCloseOnFail(success, indexFile)
 	}()
 
-	path = filepath.Join(path, fmt.Sprintf("%d", time.Now().Unix()))
+	path := filepath.Join(storagePath, fmt.Sprintf("%d", time.Now().Unix()))
 	var err error
 	if indexFile, err = os.Create(GetTmpPath(GetIndexPath(path))); err != nil {
 		return nil, errors.Wrapf(err, "cannot create index file for chunk '%s'", path)
@@ -109,7 +103,7 @@ func (c *Chunk) Flush() {
 	c.dataFile.Sync()
 }
 
-func (c *Chunk) Close() {
+func (c *Chunk) Close() error {
 	deleteChunk := c.Index.Header.ActiveCount == 0
 	c.Index.Close()
 	c.dataFile.Close()
@@ -118,11 +112,14 @@ func (c *Chunk) Close() {
 		os.Remove(c.dataFile.Name())
 		os.Remove(c.indexFile.Name())
 	}
+	return nil
 }
 
 func (c *Chunk) Finalize() error {
 	deleteChunk := c.Index.Header.ActiveCount == 0
-	c.Close()
+	if err := c.Close(); err != nil {
+		return err
+	}
 	if deleteChunk {
 		return nil
 	}
@@ -146,6 +143,9 @@ func (c *Chunk) finalizeFile(fileType, path string) error {
 type ChunkRecordHandler func(*Chunk, IndexRecord) bool
 
 func (c *Chunk) ForEachActiveRecord(repeatTimeout time.Duration, handler ChunkRecordHandler) {
+	// TODO: переделать, так как использование с callback-функцией не очень удобное
+	// к тому же наружу можно возвращать уже []byte, который возвращается сейчас методом Restore.
+	// А регистрацию обработки можно вынести в отдельный метод.
 	now := time.Now()
 	timeLimit := now.Add(-repeatTimeout)
 	for i, record := range c.Index.Records {
