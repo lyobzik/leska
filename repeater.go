@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"net/http"
 	"time"
 
@@ -51,23 +53,6 @@ func (r *Repeater) Stop() {
 	r.stopper.WaitDone()
 }
 
-func (r *Repeater) AddWithTTL(request *Request, ttl int32) {
-	record := storage.NewRecord(request)
-	record.TTL = ttl
-	r.storer.Add(record)
-}
-
-func (r *Repeater) Add(request *Request) {
-	record := storage.NewRecord(request)
-	record.TTL = r.repeatNumber
-	r.AddRecord(record)
-}
-
-func (r *Repeater) AddRecord(record *storage.Record) {
-	record.TTL -= 1
-	r.storer.Add(record)
-}
-
 func (r *Repeater) repeateLoop() {
 	defer r.stopper.Done()
 
@@ -87,48 +72,51 @@ func (r *Repeater) repeateLoop() {
 
 func (r *Repeater) repeateChunk(chunkName string) {
 	r.logger.Infof("repeate chunk %s", chunkName)
-	chunk, err := r.storer.LoadChunk(chunkName)
+	chunk, err := storage.OpenChunk(chunkName)
 	if err != nil {
 		r.logger.Errorf("cannot load chunk from '%s': %v", chunkName, err)
 		return
 	}
 	defer chunk.Close()
 
-	for r.repeateChunkRequest(chunk) {
+	chunk.ForEachActiveRecord(r.repeatTimeout, r.repeateRecord)
+	if chunk.Index.Header.ActiveCount > 0 {
+		// TODO: исправить и перенести в select выше, так как Chunks
+		// может иметь ограниченный размер.
+		r.storer.Chunks <- chunk.Path
 	}
 }
 
-func (r *Repeater) repeateChunkRequest(chunk *storage.ReadChunk) bool {
+func (r *Repeater) repeateRecord(chunk *storage.Chunk, record storage.IndexRecord) bool {
 	r.logger.Infof("repeate request from chunk: %v", chunk)
-	if record, err := chunk.GetNextRecordReader(); err == nil {
-		if request, err := LoadRequest(record.Reader, 1024*1024); err == nil {
-			defer request.Close()
-			r.repeateRequest(request, record.TTL-1)
-		} else if err != nil {
-			r.logger.Errorf("cannot load request from chunk '%s': %v", chunk.Name(), err)
-		}
-	} else if utils.IsEndOfFileError(err) {
-		r.logger.Errorf("read end of chunk: %v", err)
+	requestData, err := chunk.Restore(record)
+	if err != nil {
+		r.logger.Error("cannot restore record from chunk: %v", err)
 		return false
-	} else if err != nil {
-		r.logger.Errorf("cannot load request from chunk '%s': %v", chunk.Name(), err)
 	}
-	return true
+	requestDataReader := bufio.NewReader(bytes.NewBuffer(requestData))
+	request, err := LoadRequest(requestDataReader, 1024*1024)
+	if err != nil {
+		r.logger.Errorf("cannot load request: %v", err)
+		return false
+	}
+	defer request.Close()
+
+	return r.repeateRequest(request)
 }
 
-func (r *Repeater) repeateRequest(request *Request, ttl int32) {
-
+func (r *Repeater) repeateRequest(request *Request) bool {
 	response, err := NewResponse()
 	if err != nil {
-		return
+		return false
 	}
 	defer response.Close()
 
 	r.handler.ServeHTTP(response, &request.httpRequest)
 	if response.IsFailed() {
 		r.logger.Errorf("cannot repeate request: %v", request)
-		r.AddWithTTL(request, ttl)
 	} else {
 		r.logger.Infof("repeate successfull: %v - %v", request, response)
 	}
+	return !response.IsFailed()
 }

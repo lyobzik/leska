@@ -1,53 +1,61 @@
 package storage
 
 import (
+	"io"
+	"strings"
+	"time"
+
+	"github.com/lyobzik/go-utils"
 	"github.com/op/go-logging"
 	"github.com/pkg/errors"
-	"github.com/lyobzik/go-utils"
-	"path"
-	"path/filepath"
-	"time"
 )
 
-type Storer struct {
-	logger     *logging.Logger
-	storageDir string
-	tmpDir     string
-	data       chan Data
-	Chunks     chan string
-	stopper    *utils.Stopper
+type Data interface {
+	Close()
+	Save(io.Writer) (int, error)
 }
 
-func NewStorer(logger *logging.Logger, storage string) (*Storer, error) {
-	storageDir := path.Join(storage, "storage")
-	tmpDir := path.Join(storage, "tmp")
-	if err := utils.EnsureDirs(storageDir, tmpDir); err != nil {
+type DataRecord struct {
+	Data    Data
+	TTL     int32
+	LastTry time.Time
+}
+
+type Storer struct {
+	logger        *logging.Logger
+	storage       string
+	repeatNumber  int32
+	chunkLifetime time.Duration
+	data          chan DataRecord
+	stopper       *utils.Stopper
+	Chunks        chan string
+}
+
+func NewStorer(logger *logging.Logger, storage string, repeatNumber int32,
+	chunkLifetime time.Duration, bufferSize int) (*Storer, error) {
+
+	if err := utils.EnsureDir(storage); err != nil {
 		return nil, errors.Wrap(err, "cannot create storage directory")
 	}
 
 	return &Storer{logger: logger,
-		storageDir: storageDir,
-		tmpDir:     tmpDir,
-		data:       make(chan Data, 100000),
-		Chunks:     make(chan string, 100000),
-		stopper:    utils.NewStopper(),
+		storage:       storage,
+		repeatNumber:  repeatNumber,
+		chunkLifetime: chunkLifetime,
+		data:          make(chan DataRecord, bufferSize),
+		stopper:       utils.NewStopper(),
+		Chunks:        make(chan string, bufferSize),
 	}, nil
 }
 
-func StartStorer(logger *logging.Logger, storage string) (*Storer, error) {
-	storer, err := NewStorer(logger, storage)
+func StartStorer(logger *logging.Logger, storage string, repeatNumber int32,
+	chunkLifetime time.Duration, bufferSize int) (*Storer, error) {
+
+	storer, err := NewStorer(logger, storage, repeatNumber, chunkLifetime, bufferSize)
 	if err == nil {
 		storer.Spawn()
 	}
 	return storer, err
-}
-
-func (s *Storer) Add(data Data) {
-	s.data <- data
-}
-
-func (s *Storer) LoadChunk(chunkName string) (*ReadChunk, error) {
-	return LoadChunk(filepath.Join(s.storageDir, chunkName))
 }
 
 func (s *Storer) Spawn() {
@@ -61,51 +69,52 @@ func (s *Storer) Stop() {
 	s.stopper.WaitDone()
 }
 
-func (s *Storer) storeLoop() {
-	defer s.stopper.Done()
+func (s *Storer) Add(data Data) {
+	s.AddWithTTL(data, s.repeatNumber)
+}
 
-	finalizedChunks, err := utils.GetFiles(s.storageDir)
+func (s *Storer) AddWithTTL(data Data, ttl int32) {
+	s.data <- DataRecord{Data: data, TTL: ttl, LastTry: time.Now()}
+}
+
+func (s *Storer) storeLoop() {
+	finalizedChunks, err := utils.GetFilteredFiles(s.storage,
+		".*"+strings.Replace(indexSuffix, ".", "\\.", -1))
 	if err != nil {
 		s.logger.Errorf("cannot read inialized chunk list: %v", err)
 		return
 	}
 	s.logger.Infof("finalized chunks on startup: %v", finalizedChunks)
 
-	currentChunk, err := NewChunk(s.tmpDir)
-	// TODO: нужно закрывать currentChunk, но при этом не закрывать его дважды. То есть простой defer не поможет.
-	if err != nil {
-		s.logger.Errorf("cannot create chunk: %v", err)
-		return
-	}
+	chunk := s.createChunk()
 	defer func() {
-		s.finalizeChunk(currentChunk)
+		s.finalizeChunk(chunk)
+		s.stopper.Done()
 	}()
-	// TODO: нужно задавать время жизни чанка в конфиге
-	timer := time.Tick(5 * time.Second)
+
+	timer := time.Tick(s.chunkLifetime)
 
 	mayRun := true
-	for mayRun {
+	for mayRun && chunk != nil {
 		if len(finalizedChunks) == 0 {
 			select {
 			case data, received := <-s.data:
-				mayRun = s.handleData(currentChunk, data, received)
+				mayRun = s.handleData(chunk, data, received)
 			case <-timer:
-				var name string
-				mayRun, name, currentChunk = s.finalizeChunk(currentChunk)
-				if mayRun && len(name) != 0 {
-					finalizedChunks = append(finalizedChunks, name)
+				if chunk.Index.Header.ActiveCount > 0 {
+					finalizedChunks = append(finalizedChunks, chunk.Path)
 				}
+				chunk = s.recreateChunk(chunk)
 			}
 		} else {
 			select {
 			case data, received := <-s.data:
-				mayRun = s.handleData(currentChunk, data, received)
+				mayRun = s.handleData(chunk, data, received)
 			case <-timer:
-				var name string
-				mayRun, name, currentChunk = s.finalizeChunk(currentChunk)
-				if mayRun && len(name) != 0 {
-					finalizedChunks = append(finalizedChunks, name)
+				if chunk.Index.Header.ActiveCount > 0 {
+					finalizedChunks = append(finalizedChunks, chunk.Path)
 				}
+				chunk = s.recreateChunk(chunk)
 			case s.Chunks <- finalizedChunks[0]:
 				finalizedChunks = finalizedChunks[1:]
 			}
@@ -113,31 +122,39 @@ func (s *Storer) storeLoop() {
 	}
 }
 
-func (s *Storer) handleData(chunk *WriteChunk, data Data, received bool) bool {
+func (s *Storer) handleData(chunk *Chunk, data DataRecord, received bool) bool {
 	if !received {
 		return false
 	}
+	defer data.Data.Close()
 	if err := chunk.Store(data); err != nil {
 		s.logger.Errorf("cannot store data to chunk: %v", err)
 	}
-	data.Close()
 	return true
 }
 
-func (s *Storer) finalizeChunk(chunk *WriteChunk) (bool, string, *WriteChunk) {
-	if !chunk.IsEmpty {
-		finalizedPath, err := chunk.Finalize(s.storageDir)
-		s.logger.Infof("finializeChunk %v: %s", chunk, finalizedPath)
-		if err != nil {
-			s.logger.Errorf("cannot finalize chunk: %v", err)
-			return false, "", nil
-		}
-		newChunk, err := NewChunk(s.tmpDir)
-		if err != nil {
-			s.logger.Errorf("cannot create new chunk: %v", err)
-			return false, "", nil
-		}
-		return true, finalizedPath, newChunk
+func (s *Storer) recreateChunk(chunk *Chunk) *Chunk {
+	if s.finalizeChunk(chunk) {
+		return s.createChunk()
 	}
-	return true, "", chunk
+	return nil
+}
+
+func (s *Storer) createChunk() *Chunk {
+	chunk, err := CreateChunk(s.storage)
+	if err != nil {
+		s.logger.Errorf("cannot create new chunk: %v", err)
+		return nil
+	}
+	return chunk
+}
+
+func (s *Storer) finalizeChunk(chunk *Chunk) bool {
+	if chunk != nil {
+		if err := chunk.Finalize(); err != nil {
+			s.logger.Errorf("cannot finalize chunk: %v", err)
+			return false
+		}
+	}
+	return true
 }

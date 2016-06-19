@@ -72,7 +72,8 @@ func main() {
 	forwarder, err := CreateForwarder(logger, config.Upstreams)
 	utils.HandleError(logger, "cannot create forwarder", err)
 
-	storer, err := storage.StartStorer(logger, config.Storage)
+	storer, err := storage.StartStorer(logger, config.Storage, config.RepeatNumber,
+		5*time.Second, 100000)
 	utils.HandleError(logger, "cannot create storer", err)
 	defer storer.Stop()
 
@@ -84,7 +85,7 @@ func main() {
 	err = httpdown.ListenAndServe(
 		&http.Server{
 			Addr:    config.Address,
-			Handler: NewStreamer(logger, repeater, forwarder),
+			Handler: NewStreamer(logger, storer, forwarder),
 		},
 		&httpdown.HTTP{
 			StopTimeout: 10 * time.Second,

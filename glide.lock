@@ -1,50 +1,47 @@
-hash: 07bf2dfa517fee11a764884119a1fc4f9681e9aed5afcc02600403feda9edc2e
-updated: 2016-06-13T15:21:19.502164707+06:00
+hash: 5a35698a428145df2cbcd09d111242b6869268f54f7d16aff9ab7f7a1eb657a5
+updated: 2016-06-19T15:47:56.304341596+06:00
 imports:
 - name: github.com/codahale/hdrhistogram
   version: f8ad88b59a584afeee9d334eff879b104439117b
+- name: github.com/edsrzf/mmap-go
+  version: 935e0e8a636ca4ba70b713f3e38a19e1b77739e8
 - name: github.com/facebookgo/clock
   version: 600d898af40aa09a7a93ecb9265d87b0504b6f03
 - name: github.com/facebookgo/httpdown
   version: a3b1354551a26449fbe05f5d855937f6e7acbd71
 - name: github.com/facebookgo/stats
   version: 1b76add642e42c6ffba7211ad7b3939ce654526e
-- name: github.com/howeyc/fsnotify
-  version: f0c08ee9c60704c1879025f2ae0ff3e000082c13
 - name: github.com/jessevdk/go-flags
   version: b9b882a3990882b05e02765f5df2cd3ad02874ee
 - name: github.com/lyobzik/go-utils
-  version: 6e38aedf6ade1f77765048b40a8bae0366ac811b
+  version: 5ca2ae1abcbf48ee904725efbd046683f11decdd
+  subpackages:
+  - storage
 - name: github.com/lyobzik/leska
   version: ""
   subpackages:
   - storage
-- name: github.com/mailgun/log
-  version: 2f35a4607f1abf71f97f77f99b0de8493ef6f4ef
 - name: github.com/mailgun/multibuf
   version: 565402cd71fbd9c12aa7e295324ea357e970a61e
 - name: github.com/mailgun/timetools
   version: fd192d755b00c968d312d23f521eb0cdc6f66bd0
-- name: github.com/mailgun/ttlmap
-  version: 16b258d86efc53ac5cf3e550604f566c32624fab
+- name: github.com/nu7hatch/gouuid
+  version: 179d4d0c4d8d407a32af483c2354df1d2c91e6c3
 - name: github.com/op/go-logging
   version: 970db520ece77730c7e4724c61121037378659d9
 - name: github.com/pkg/errors
-  version: 01fa4104b9c248c8945d14d9f128454d5b28d595
+  version: 0bc61eb85b3cab5d83c9432263916d5df58d9855
+- name: github.com/stretchr/testify
+  version: d77da356e56a7428ad25149ca77381849a6a5232
+  subpackages:
+  - require
 - name: github.com/vulcand/oxy
   version: 11677428db34c4a05354d66d028174d0e3c6e905
   subpackages:
   - forward
-  - memmetrics
-  - testutils
-  - utils
   - roundrobin
-- name: github.com/vulcand/predicate
-  version: cb0bff91a7ab7cf7571e661ff883fc997bc554a3
-- name: golang.org/x/exp
-  version: 5295bc952743deac9199eded5c17b4fd3c2b82f3
-  subpackages:
-  - inotify
+  - utils
+  - memmetrics
 - name: gopkg.in/mgo.v2
   version: 29cc868a5ca65f401ff318143f9408d02f4799cc
   subpackages:

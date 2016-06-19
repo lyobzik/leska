@@ -1,24 +1,23 @@
 package: .
-import:
-- package: github.com/codahale/hdrhistogram
-- package: github.com/mailgun/log
-- package: github.com/mailgun/multibuf
-- package: github.com/mailgun/timetools
-- package: github.com/mailgun/ttlmap
-- package: github.com/vulcand/oxy
-  subpackages:
-  - forward
-  - memmetrics
-  - testutils
-  - utils
-- package: github.com/vulcand/predicate
-- package: github.com/jessevdk/go-flags
-- package: github.com/pkg/errors
-- package: github.com/op/go-logging
-- package: golang.org/x/exp
-  subpackages:
-  - inotify
-- package: github.com/howeyc/fsnotify
 ignore:
 - github.com/lyobzik/leska
 - github.com/lyobzik/leska/storage
+import:
+- package: github.com/edsrzf/mmap-go
+- package: github.com/facebookgo/httpdown
+- package: github.com/jessevdk/go-flags
+- package: github.com/lyobzik/go-utils
+  subpackages:
+  - storage
+- package: github.com/mailgun/multibuf
+- package: github.com/op/go-logging
+- package: github.com/pkg/errors
+- package: github.com/vulcand/oxy
+  subpackages:
+  - forward
+  - roundrobin
+  - utils
+- package: github.com/nu7hatch/gouuid
+- package: github.com/stretchr/testify
+  subpackages:
+  - require
