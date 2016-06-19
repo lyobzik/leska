@@ -1,12 +1,13 @@
 package storage
 
 import (
-	"github.com/edsrzf/mmap-go"
-	"github.com/pkg/errors"
 	"os"
 	"reflect"
 	"time"
 	"unsafe"
+
+	"github.com/edsrzf/mmap-go"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -14,11 +15,10 @@ const (
 	indexVersion = 1
 )
 
-// TODO: добавлять заголовок в начало файла
 type IndexHeader struct {
-	MagicNumber int32
+	Magic       int32
 	Version     int32
-	Lenght      int64 // in elements number
+	Length      int64 // in elements number
 	ActiveCount int64
 }
 
@@ -37,6 +37,10 @@ type Index struct {
 	recordsInfo *reflect.SliceHeader
 }
 
+func OpenIndexFile(path string) (*os.File, error) {
+	return os.OpenFile(path, os.O_RDWR, 0666)
+}
+
 func CreateIndex(file *os.File) (*Index, error) {
 	err := file.Truncate((int64)(unsafe.Sizeof(IndexHeader{})))
 	if err != nil {
@@ -50,9 +54,10 @@ func CreateIndex(file *os.File) (*Index, error) {
 	index := &Index{data: data, file: file}
 
 	index.Header = (*IndexHeader)(unsafe.Pointer(&data[0]))
-	index.Header.MagicNumber = indexMagic
+	// TODO: Нужно все значения в индексе сохранять с каким-то определенным порядком байт.
+	index.Header.Magic = indexMagic
 	index.Header.Version = indexVersion
-	index.Header.Lenght = 0
+	index.Header.Length = 0
 	index.Header.ActiveCount = 0
 
 	index.recordsInfo = (*reflect.SliceHeader)(unsafe.Pointer(&index.Records))
@@ -70,7 +75,7 @@ func OpenIndex(file *os.File) (*Index, error) {
 
 	index := &Index{data: data, file: file}
 	index.Header = (*IndexHeader)(unsafe.Pointer(&data[0]))
-	if index.Header.MagicNumber != indexMagic {
+	if index.Header.Magic != indexMagic {
 		return nil, errors.New("incorrect magic number of index file")
 	}
 	if index.Header.Version != indexVersion {
@@ -79,27 +84,30 @@ func OpenIndex(file *os.File) (*Index, error) {
 
 	index.recordsInfo = (*reflect.SliceHeader)(unsafe.Pointer(&index.Records))
 	index.recordsInfo.Data = uintptr(unsafe.Pointer(&data[0])) + unsafe.Sizeof(IndexHeader{})
-	index.recordsInfo.Len = int(index.Header.Lenght)
+	index.recordsInfo.Len = int(index.Header.Length)
 
 	return index, nil
-
 }
 
-func (index *Index) AppendRecord() (int, error) {
+func (index *Index) AppendRecord() (*IndexRecord, error) {
 	stat, err := index.file.Stat()
 	if err != nil {
-		return -1, errors.Wrapf(err, "cannot get initiale file size")
+		return nil, errors.Wrapf(err, "cannot get initiale file size")
 	}
 	err = index.file.Truncate(stat.Size() + int64(unsafe.Sizeof(IndexRecord{})))
 	if err != nil {
-		return -1, errors.Wrapf(err, "cannot resize file")
+		return nil, errors.Wrapf(err, "cannot resize file")
 	}
 
-	index.Header.Lenght += 1
+	index.Header.Length += 1
 	index.Header.ActiveCount += 1
 
-	index.recordsInfo.Len = int(index.Header.Lenght)
-	return int(index.Header.Lenght - 1), nil
+	index.recordsInfo.Len = int(index.Header.Length)
+	return &index.Records[index.Header.Length -1], nil
+}
+
+func (index *Index) Flush() error {
+	return index.data.Flush()
 }
 
 func (index *Index) Close() error {
@@ -111,9 +119,11 @@ func (index *Index) Close() error {
 	if err := index.data.Unmap(); err != nil {
 		return errors.Wrapf(err, "cannot unmap file")
 	}
-	if err := index.file.Close(); err != nil {
-		return errors.Wrapf(err, "cannot close file")
-	}
+	// TODO: подумать почему вообще мы открываем файл индекса снаружи и можем ли мы
+	// просто передать этот файл во владение индексу.
+	//if err := index.file.Close(); err != nil {
+	//	return errors.Wrapf(err, "cannot close file")
+	//}
 
 	return nil
 }

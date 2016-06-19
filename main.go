@@ -85,6 +85,7 @@ func (d *TestStringData) Save(writer io.Writer) (int, error) {
 // TODO: возможно в эту задачу хорошо подойдет fasthttp. Нужно будет посмотреть
 // TODO: на сколько все станет сложнее.
 func main() {
+	// TODO: написать тесты для storage.
 	//go RunTestServer(":8088")
 	//go RunTestServer(":8089")
 	//go RunTestServer(":8090")
@@ -104,11 +105,11 @@ func main() {
 	//utils.HandleErrorWithoutLogger("cannot store data to chunk", err)
 	//chunk.Finalize()
 
-	chunk, err := storage.OpenChunk("tmp/storage/test/1466262383")
+	chunk, err := storage.OpenChunk("tmp/storage/test/1466263516")
 	utils.HandleErrorWithoutLogger("cannot open chunk", err)
 	fmt.Printf("%+v\n", chunk.Index)
 	fmt.Printf("%+v\n", chunk.Index.Header)
-	chunk.ForEachActiveRecord(100 * time.Second, func(chunk *storage.Chunk, record storage.IndexRecord) bool {
+	chunk.ForEachActiveRecord(10 * time.Second, func(chunk *storage.Chunk, record storage.IndexRecord) bool {
 		data, err := chunk.Restore(record)
 		if err != nil {
 			fmt.Printf("cannot restore data for record %+v: %v", record, err)

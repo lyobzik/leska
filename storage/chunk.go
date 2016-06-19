@@ -60,7 +60,7 @@ func OpenChunk(path string) (*Chunk, error) {
 	}()
 
 	var err error
-	if indexFile, err = os.OpenFile(GetIndexPath(path), os.O_RDWR, 0666); err != nil {
+	if indexFile, err = OpenIndexFile(GetIndexPath(path)); err != nil {
 		return nil, errors.Wrapf(err, "cannot open index file of chunk '%s'", path)
 	}
 	if dataFile, err = os.Open(GetDataPath(path)); err != nil {
@@ -82,15 +82,14 @@ func (c *Chunk) Store(data DataRecord) error {
 		return errors.Wrap(err, "cannot store data to chunk")
 	}
 
-	// TODO: лучше возвращать не индекс, а указатель на RecordHeader
-	i, err := c.Index.AppendRecord()
+	record, err := c.Index.AppendRecord()
 	if err != nil {
 		return errors.Wrapf(err, "cannot append record to index")
 	}
-	c.Index.Records[i].Offset = offset
-	c.Index.Records[i].Size = int64(size)
-	c.Index.Records[i].TTL = data.TTL
-	c.Index.Records[i].LastTry = data.LastTry
+	record.Offset = offset
+	record.Size = int64(size)
+	record.TTL = data.TTL
+	record.LastTry = data.LastTry
 	return nil
 }
 
@@ -105,6 +104,7 @@ func (c *Chunk) Restore(record IndexRecord) ([]byte, error) {
 }
 
 func (c *Chunk) Flush() {
+	c.Index.Flush()
 	c.indexFile.Sync()
 	c.dataFile.Sync()
 }
